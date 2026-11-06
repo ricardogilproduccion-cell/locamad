@@ -1,0 +1,211 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RolUsuario {
+  ADMIN
+  SCOUT
+  PRODUCCION
+  LOCALIZACIONES
+  DIRECCION_ARTE
+  INVITADO
+}
+
+enum EstadoProyecto {
+  PREPARACION
+  RODAJE
+  POSTPRODUCCION
+  CERRADO
+}
+
+enum TipoProyecto {
+  SERIE
+  LARGOMETRAJE
+  PUBLICIDAD
+  DOCUMENTAL
+}
+
+enum EstadoProyectoLocalizacion {
+  PRESELECCIONADA
+  SCOUTING
+  TRAMITANDO_PERMISO
+  CONFIRMADA
+  DESCARTADA
+}
+
+enum EstadoLocalizacion {
+  PROPUESTA
+  PENDIENTE
+  APROBADA
+  DESCARTADA
+  CONTRATADA
+}
+
+enum TipoPermiso {
+  ACTO_COMUNICADO
+  OCUPACION_VIA_PUBLICA
+  OTROS
+}
+
+enum EstadoPermiso {
+  BORRADOR
+  PRESENTADO
+  REQUERIMIENTO
+  CONCEDIDO
+  DENEGADO
+  TASAS_PAGADAS
+}
+
+enum TipoAparcamiento {
+  LIBRE
+  SER_AZUL
+  SER_VERDE
+  PROHIBIDO
+}
+
+model Usuario {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  nombre    String
+  password  String     @default("")
+  rol       RolUsuario @default(INVITADO)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @default(now()) @updatedAt
+}
+
+model Proyecto {
+  id             String          @id @default(uuid())
+  nombre         String
+  tipo           TipoProyecto    @default(LARGOMETRAJE)
+  productora     String?
+  estado         EstadoProyecto  @default(PREPARACION)
+  fechaInicio    DateTime?
+  fechaFin       DateTime?
+  localizaciones Localizacion[]
+  asignaciones   ProyectoLocalizacion[]
+  permisos       Permiso[]
+  presupuestos   Presupuesto[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @default(now()) @updatedAt
+}
+
+model Localizacion {
+  id               String             @id @default(uuid())
+  nombre           String
+  tipoEspacio      String             // Vivienda, nave industrial, vía pública, oficina, etc.
+  estilo           String?            // Moderno, brutalista, años 70, etc.
+  direccion        String
+  municipio        String             // Madrid, Alcalá de Henares, etc.
+  distritoBarrio   String?
+  latitud          Float
+  longitud         Float
+  titularidad      String             // Privada, municipal, autonómica, etc.
+  
+  // Logística y accesos
+  potenciaElectricaKw Float?
+  tomaAgua         Boolean            @default(false)
+  aseosDisponibles Boolean            @default(false)
+  galiboCamionesM  Float?
+  espacioBaseProd  Boolean            @default(false)
+  
+  // Acústica y luz
+  nivelRuidoDb     Int?
+  orientacionLuz   String?            // Norte, Sur, Este, Oeste
+  
+  // ZBE y movilidad
+  esZbe            Boolean            @default(false)
+  esZbedepCentro   Boolean            @default(false)
+  aparcamientoSer  TipoAparcamiento   @default(LIBRE)
+  
+  valoracion       Int                @default(4)
+  estado           EstadoLocalizacion @default(PROPUESTA)
+  
+  proyectoId       String?
+  proyecto         Proyecto?          @relation(fields: [proyectoId], references: [id])
+  asignaciones     ProyectoLocalizacion[]
+  contactos        Contacto[]
+  permisos         Permiso[]
+  gastos           Gasto[]
+  fotos            String[]           @default([])
+
+  createdAt        DateTime           @default(now())
+}
+
+model ProyectoLocalizacion {
+  id                  String                    @id @default(uuid())
+  proyectoId          String
+  localizacionId      String
+  estado              EstadoProyectoLocalizacion @default(PRESELECCIONADA)
+  diasRodajeEstimados Int?
+  notasProduccion     String?
+  proyecto            Proyecto                  @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  localizacion        Localizacion              @relation(fields: [localizacionId], references: [id], onDelete: Cascade)
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @default(now()) @updatedAt
+
+  @@unique([proyectoId, localizacionId])
+  @@index([localizacionId])
+}
+
+model Contacto {
+  id             String       @id @default(uuid())
+  nombre         String
+  telefono       String?
+  email          String?
+  rolCargo       String?      // Propietario, conserje, administrador, etc.
+  notasTrato     String?
+  localizacionId String
+  localizacion   Localizacion @relation(fields: [localizacionId], references: [id], onDelete: Cascade)
+}
+
+model Permiso {
+  id                 String         @id @default(uuid())
+  tipo               TipoPermiso    @default(OCUPACION_VIA_PUBLICA)
+  estado             EstadoPermiso  @default(BORRADOR)
+  numeroRegistro     String?
+  organismo          String         // Ej: Negociado de Rodajes Ayto Madrid
+  fechaSolicitud     DateTime?
+  fechaRodajeInicio  DateTime
+  fechaRodajeFin     DateTime
+  metrosCordon       Float          @default(0)
+  metrosBateria      Float          @default(0)
+  tasaEstimadaEur    Float          @default(0)
+  
+  proyectoId         String
+  proyecto           Proyecto       @relation(fields: [proyectoId], references: [id])
+  localizacionId     String?
+  localizacion       Localizacion?  @relation(fields: [localizacionId], references: [id])
+  vehiculos          VehiculoTecnico[]
+
+  createdAt          DateTime       @default(now())
+}
+
+model VehiculoTecnico {
+  id          String   @id @default(uuid())
+  matricula   String   // Formato para ZBEDEP Centro: 1234BBB
+  tipo        String   // Camión, furgoneta, grupo electrógeno
+  fechaAcceso DateTime
+  permisoId   String
+  permiso     Permiso  @relation(fields: [permisoId], references: [id], onDelete: Cascade)
+}
+
+model Presupuesto {
+  id           String   @id @default(uuid())
+  proyectoId   String
+  proyecto     Proyecto @relation(fields: [proyectoId], references: [id])
+  totalEstimado Float    @default(0)
+}
+
+model Gasto {
+  id             String       @id @default(uuid())
+  concepto       String
+  importe        Float
+  localizacionId String
+  localizacion   Localizacion @relation(fields: [localizacionId], references: [id])
+  createdAt      DateTime     @default(now())
+}
