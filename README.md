@@ -6,6 +6,12 @@ LocaMad usa NextAuth con credenciales y contraseñas almacenadas como hash bcryp
 
 Para crear o actualizar la cuenta de prueba sin borrar el catálogo, ejecuta `npm run seed:auth`. En desarrollo usa `produccion@locamad.es` con la contraseña `LocamadDemo2026!`; puedes sobrescribirla con `LOCAMAD_DEMO_PASSWORD` antes de ejecutar el seed. En producción, configura esa variable explícitamente y define `NEXTAUTH_SECRET` y `NEXTAUTH_URL` en el entorno de despliegue.
 
+## Búsqueda global
+
+El buscador principal permite consultar el catálogo y los lugares de OpenStreetMap. La búsqueda externa se realiza al enviar el formulario (no hay autocompletado) mediante Nominatim, con Madrid como zona predeterminada, una consulta por segundo como máximo por proceso y atribución visible a OpenStreetMap. El catálogo actual representa título, categoría y descripción mediante los campos Prisma `nombre`, `tipoEspacio` y `estilo`, respectivamente; la búsqueda también incluye dirección, municipio y barrio.
+
+`GET /api/localizaciones?q=...` busca en el catálogo. `GET /api/scouting/search?q=...&zona=Madrid` busca negocios y lugares cercanos. Añadir un resultado externo usa `POST /api/localizaciones` y requiere una sesión con rol `PRODUCCION` o `LOCALIZACIONES`.
+
 ## Getting Started
 
 First, run the development server:

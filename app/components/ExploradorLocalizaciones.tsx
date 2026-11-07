@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
@@ -14,6 +14,8 @@ import {
   Compass,
   Download,
   Droplets,
+  ExternalLink,
+  Globe2,
   LogOut,
   LoaderCircle,
   Mail,
@@ -89,6 +91,28 @@ interface Localizacion {
   contactos: ContactoLocalizacion[];
 }
 
+interface ResultadoCatalogo {
+  id: string;
+  nombre: string;
+  tipoEspacio: string;
+  estilo: string | null;
+  direccion: string;
+  municipio: string;
+  distritoBarrio: string | null;
+  latitud: number;
+  longitud: number;
+}
+
+interface ResultadoInternet {
+  id: string;
+  nombre: string;
+  direccion: string;
+  lat: number;
+  lng: number;
+}
+
+type AmbitoBusqueda = "todo" | "catalogo" | "internet";
+
 const estadoLabel: Record<string, string> = {
   PROPUESTA: "Propuesta",
   PENDIENTE: "Pendiente",
@@ -144,7 +168,26 @@ export default function ExploradorLocalizaciones({
 }) {
   const router = useRouter();
   const puedeGestionar = puedeGestionarLocalizaciones(usuario?.rol);
+  const [localizacionesNuevas, setLocalizacionesNuevas] = useState<Localizacion[]>([]);
+  const localizacionesCatalogo = [
+    ...localizaciones,
+    ...localizacionesNuevas.filter(
+      (nueva) => !localizaciones.some((localizacion) => localizacion.id === nueva.id),
+    ),
+  ];
   const [busqueda, setBusqueda] = useState("");
+  const [busquedaGlobal, setBusquedaGlobal] = useState("");
+  const [zonaBusqueda, setZonaBusqueda] = useState("Madrid");
+  const [ambitoBusqueda, setAmbitoBusqueda] = useState<AmbitoBusqueda>("todo");
+  const [resultadosCatalogo, setResultadosCatalogo] = useState<ResultadoCatalogo[]>([]);
+  const [resultadosInternet, setResultadosInternet] = useState<ResultadoInternet[]>([]);
+  const [busquedaEjecutada, setBusquedaEjecutada] = useState(false);
+  const [buscando, setBuscando] = useState(false);
+  const [errorCatalogo, setErrorCatalogo] = useState("");
+  const [errorInternet, setErrorInternet] = useState("");
+  const [erroresGuardado, setErroresGuardado] = useState<Record<string, string>>({});
+  const [idsGuardando, setIdsGuardando] = useState<string[]>([]);
+  const [idsAñadidos, setIdsAñadidos] = useState<string[]>([]);
   const [soloZbedep, setSoloZbedep] = useState(false);
   const [soloBase, setSoloBase] = useState(false);
   const [potenciaMinima, setPotenciaMinima] = useState("");
@@ -160,9 +203,116 @@ export default function ExploradorLocalizaciones({
     setSolicitudFocoMapa((solicitud) => solicitud + 1);
   };
 
+  const buscarGlobalmente = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const query = busquedaGlobal.trim();
+    const zona = zonaBusqueda.trim() || "Madrid";
+    if (!query || buscando) return;
+
+    setBuscando(true);
+    setBusquedaEjecutada(true);
+    setResultadosCatalogo([]);
+    setResultadosInternet([]);
+    setErrorCatalogo("");
+    setErrorInternet("");
+
+    const tareas: Promise<void>[] = [];
+    if (ambitoBusqueda !== "internet") {
+      tareas.push(
+        fetch(`/api/localizaciones?q=${encodeURIComponent(query)}`)
+          .then(async (response) => {
+            const data = (await response.json()) as {
+              results?: ResultadoCatalogo[];
+              error?: string;
+            };
+            if (!response.ok) throw new Error(data.error || "No se pudo buscar en el catálogo.");
+            setResultadosCatalogo(data.results ?? []);
+          })
+          .catch((error: unknown) => {
+            setErrorCatalogo(
+              error instanceof Error ? error.message : "No se pudo buscar en el catálogo.",
+            );
+          }),
+      );
+    }
+
+    if (ambitoBusqueda !== "catalogo") {
+      const params = new URLSearchParams({ q: query, zona });
+      tareas.push(
+        fetch(`/api/scouting/search?${params}`)
+          .then(async (response) => {
+            const data = (await response.json()) as {
+              results?: ResultadoInternet[];
+              error?: string;
+            };
+            if (!response.ok) throw new Error(data.error || "No se pudo buscar en internet.");
+            setResultadosInternet(data.results ?? []);
+          })
+          .catch((error: unknown) => {
+            setErrorInternet(
+              error instanceof Error ? error.message : "No se pudo buscar en internet.",
+            );
+          }),
+      );
+    }
+
+    await Promise.all(tareas);
+    setBuscando(false);
+  };
+
+  const añadirAlCatalogo = async (lugar: ResultadoInternet) => {
+    if (!puedeGestionar || idsGuardando.includes(lugar.id)) return;
+    setIdsGuardando((actuales) => [...actuales, lugar.id]);
+    setErroresGuardado((actuales) => {
+      const siguientes = { ...actuales };
+      delete siguientes[lugar.id];
+      return siguientes;
+    });
+
+    try {
+      const response = await fetch("/api/localizaciones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nombre: lugar.nombre,
+          direccion: lugar.direccion,
+          municipio: zonaBusqueda.trim() || "Madrid",
+          latitud: lugar.lat,
+          longitud: lugar.lng,
+        }),
+      });
+      const data = (await response.json()) as {
+        localizacion?: Localizacion;
+        creada?: boolean;
+        error?: string;
+      };
+      if (!response.ok || !data.localizacion) {
+        throw new Error(data.error || "No se pudo guardar la localización.");
+      }
+
+      const localizacionGuardada = data.localizacion;
+      setLocalizacionesNuevas((actuales) =>
+        actuales.some((localizacion) => localizacion.id === localizacionGuardada.id)
+          ? actuales
+          : [localizacionGuardada, ...actuales],
+      );
+      setIdsAñadidos((actuales) => [...actuales, lugar.id]);
+      setNotificacion(
+        data.creada ? "Localización añadida a tu catálogo." : "Esta localización ya estaba en tu catálogo.",
+      );
+    } catch (error) {
+      setErroresGuardado((actuales) => ({
+        ...actuales,
+        [lugar.id]: error instanceof Error ? error.message : "No se pudo guardar la localización.",
+      }));
+    } finally {
+      setIdsGuardando((actuales) => actuales.filter((id) => id !== lugar.id));
+    }
+  };
+
   const termino = normalizar(busqueda.trim());
   const minimoKw = potenciaMinima === "" ? null : Number(potenciaMinima);
-  const filtradas = localizaciones.filter((localizacion) => {
+  const filtradas = localizacionesCatalogo.filter((localizacion) => {
     const texto = normalizar(
       `${localizacion.nombre} ${localizacion.direccion} ${localizacion.distritoBarrio ?? ""}`,
     );
@@ -176,11 +326,11 @@ export default function ExploradorLocalizaciones({
     );
   });
 
-  const localizacionActiva = localizaciones.find(
+  const localizacionActiva = localizacionesCatalogo.find(
     (localizacion) => localizacion.id === localizacionActivaId,
   );
-  const enCentro = localizaciones.filter((localizacion) => localizacion.esZbedepCentro).length;
-  const conBase = localizaciones.filter((localizacion) => localizacion.espacioBaseProd).length;
+  const enCentro = localizacionesCatalogo.filter((localizacion) => localizacion.esZbedepCentro).length;
+  const conBase = localizacionesCatalogo.filter((localizacion) => localizacion.espacioBaseProd).length;
 
   useEffect(() => {
     if (!localizacionActivaId) return;
@@ -258,7 +408,7 @@ export default function ExploradorLocalizaciones({
         "Teléfono",
         "Notas de producción",
       ],
-      ...localizaciones
+      ...localizacionesCatalogo
         .filter((localizacion) =>
           localizacion.asignaciones.some((asignacion) => asignacion.proyectoId === proyectoActivoId),
         )
@@ -395,13 +545,13 @@ export default function ExploradorLocalizaciones({
                 <h1 className="mt-2 text-[26px] font-semibold leading-tight">Localizaciones</h1>
               </div>
               <span className="pb-1 font-mono text-sm text-[#71786f]">
-                {String(filtradas.length).padStart(2, "0")} / {String(localizaciones.length).padStart(2, "0")}
+                {String(filtradas.length).padStart(2, "0")} / {String(localizacionesCatalogo.length).padStart(2, "0")}
               </span>
             </div>
 
             <div className="mt-4 grid grid-cols-3 divide-x divide-[#e1e4dc] border-y border-[#e1e4dc] py-3">
               <div className="pr-2">
-                <p className="font-mono text-lg font-semibold">{localizaciones.length}</p>
+                <p className="font-mono text-lg font-semibold">{localizacionesCatalogo.length}</p>
                 <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-[#737a71]">En catálogo</p>
               </div>
               <div className="px-3">
@@ -413,6 +563,209 @@ export default function ExploradorLocalizaciones({
                 <p className="mt-0.5 text-[10px] uppercase tracking-[0.08em] text-[#737a71]">Base de prod.</p>
               </div>
             </div>
+
+            <form
+              aria-label="Buscador global de localizaciones"
+              className="mt-4 border border-[#dfe3db] bg-white p-3.5"
+              onSubmit={buscarGlobalmente}
+            >
+              <label className="flex h-10 items-center gap-2.5 border border-[#dfe3db] bg-[#fbfcfa] px-3 text-[#7b8179] focus-within:border-[#718a72]">
+                <Search aria-hidden="true" size={16} />
+                <input
+                  aria-label="Buscar negocios o localizaciones"
+                  className="h-full min-w-0 flex-1 bg-transparent text-sm text-[#20251f] outline-none placeholder:text-[#92988f]"
+                  maxLength={120}
+                  onChange={(event) => {
+                    setBusquedaGlobal(event.target.value);
+                    setBusquedaEjecutada(false);
+                  }}
+                  placeholder="Busca un lugar, negocio o categoría..."
+                  type="search"
+                  value={busquedaGlobal}
+                />
+              </label>
+
+              <div className="mt-2.5 flex flex-col gap-2.5 sm:flex-row">
+                <label className="flex h-9 min-w-0 flex-1 items-center gap-2 border border-[#dfe3db] px-2.5 text-[#687166] focus-within:border-[#718a72]">
+                  <MapPin aria-hidden="true" className="shrink-0" size={14} />
+                  <span className="sr-only">Zona geográfica</span>
+                  <input
+                    aria-label="Zona geográfica"
+                    className="w-full min-w-0 bg-transparent text-xs text-[#20251f] outline-none placeholder:text-[#92988f]"
+                    maxLength={100}
+                    onChange={(event) => {
+                      setZonaBusqueda(event.target.value);
+                      setBusquedaEjecutada(false);
+                    }}
+                    placeholder="Zona"
+                    value={zonaBusqueda}
+                  />
+                </label>
+                <button
+                  className="flex h-9 shrink-0 items-center justify-center gap-1.5 bg-[#183d32] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#285746] disabled:cursor-wait disabled:opacity-70"
+                  disabled={buscando || !busquedaGlobal.trim()}
+                  type="submit"
+                >
+                  {buscando ? <LoaderCircle className="animate-spin" size={14} /> : <Search size={14} />}
+                  Buscar
+                </button>
+              </div>
+
+              <fieldset className="mt-3">
+                <legend className="sr-only">Ámbito de búsqueda</legend>
+                <div className="grid grid-cols-3 border border-[#e1e4dc]">
+                  {([
+                    ["todo", "Todo"],
+                    ["catalogo", "En mi catálogo"],
+                    ["internet", "En internet"],
+                  ] as const).map(([ambito, etiqueta]) => (
+                    <button
+                      aria-pressed={ambitoBusqueda === ambito}
+                      className={`min-h-8 border-r border-[#e1e4dc] px-1.5 text-[10px] font-medium last:border-r-0 sm:text-[11px] ${
+                        ambitoBusqueda === ambito
+                          ? "bg-[#e8f0e9] text-[#315d48]"
+                          : "bg-white text-[#667064] hover:bg-[#f5f6f3]"
+                      }`}
+                      disabled={buscando}
+                      key={ambito}
+                      onClick={() => {
+                        setAmbitoBusqueda(ambito);
+                        setBusquedaEjecutada(false);
+                      }}
+                      type="button"
+                    >
+                      {etiqueta}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            </form>
+
+            {busquedaEjecutada && (
+              <div
+                aria-live="polite"
+                className="mt-3 max-h-[340px] space-y-3 overflow-y-auto border border-[#e1e4dc] bg-white p-3"
+              >
+                {buscando && (
+                  <p className="flex items-center gap-2 text-xs text-[#687166]" role="status">
+                    <LoaderCircle className="animate-spin" size={14} /> Buscando coincidencias...
+                  </p>
+                )}
+
+                {ambitoBusqueda !== "internet" && (
+                  <section aria-labelledby="resultados-catalogo-titulo">
+                    <h2
+                      className="text-xs font-bold text-[#315d48]"
+                      id="resultados-catalogo-titulo"
+                    >
+                      📍 En tu catálogo
+                    </h2>
+                    {errorCatalogo ? (
+                      <p className="mt-2 text-xs text-[#a33c32]" role="alert">{errorCatalogo}</p>
+                    ) : !buscando && resultadosCatalogo.length === 0 ? (
+                      <p className="mt-2 text-xs text-[#747b72]">No hay coincidencias en tu catálogo.</p>
+                    ) : (
+                      <ul className="mt-2 space-y-2">
+                        {resultadosCatalogo.map((resultado) => (
+                          <li
+                            className="flex items-center justify-between gap-2 border-t border-[#edf0e9] pt-2"
+                            key={resultado.id}
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-semibold text-[#30382f]">{resultado.nombre}</p>
+                              <p className="truncate text-[11px] text-[#747b72]">
+                                {resultado.tipoEspacio}
+                                {resultado.estilo ? ` · ${resultado.estilo}` : ""} · {resultado.direccion}
+                              </p>
+                            </div>
+                            <button
+                              className="shrink-0 text-[11px] font-semibold text-[#315d48] underline underline-offset-2"
+                              onClick={() => seleccionarLocalizacion(resultado.id)}
+                              type="button"
+                            >
+                              Abrir ficha
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                )}
+
+                {ambitoBusqueda !== "catalogo" && (
+                  <section aria-labelledby="resultados-internet-titulo">
+                    <h2
+                      className="text-xs font-bold text-[#315d48]"
+                      id="resultados-internet-titulo"
+                    >
+                      🌐 Opciones en internet
+                    </h2>
+                    {errorInternet ? (
+                      <p className="mt-2 text-xs text-[#a33c32]" role="alert">{errorInternet}</p>
+                    ) : !buscando && resultadosInternet.length === 0 ? (
+                      <p className="mt-2 text-xs text-[#747b72]">No hay lugares encontrados en internet.</p>
+                    ) : (
+                      <ul className="mt-2 space-y-2">
+                        {resultadosInternet.map((lugar) => {
+                          const añadido = idsAñadidos.includes(lugar.id);
+                          const guardando = idsGuardando.includes(lugar.id);
+                          const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lugar.lat},${lugar.lng}`;
+                          return (
+                            <li className="border-t border-[#edf0e9] pt-2" key={lugar.id}>
+                              <p className="text-xs font-semibold text-[#30382f]">{lugar.nombre}</p>
+                              <p className="mt-0.5 text-[11px] leading-4 text-[#747b72]">{lugar.direccion}</p>
+                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <a
+                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[#315d48] underline underline-offset-2"
+                                  href={mapsUrl}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  <ExternalLink size={12} /> Ver en Maps
+                                </a>
+                                <button
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#315d48] disabled:cursor-not-allowed disabled:opacity-60"
+                                  disabled={!puedeGestionar || añadido || guardando}
+                                  onClick={() => void añadirAlCatalogo(lugar)}
+                                  title={
+                                    puedeGestionar
+                                      ? undefined
+                                      : "Inicia sesión con un rol autorizado para añadir localizaciones."
+                                  }
+                                  type="button"
+                                >
+                                  {guardando ? (
+                                    <LoaderCircle className="animate-spin" size={13} />
+                                  ) : añadido ? (
+                                    <Check size={13} />
+                                  ) : (
+                                    <Plus size={13} />
+                                  )}
+                                  {añadido ? "Añadido" : "Añadir a mi catálogo"}
+                                </button>
+                              </div>
+                              {erroresGuardado[lugar.id] && (
+                                <p className="mt-1 text-[11px] text-[#a33c32]" role="alert">
+                                  {erroresGuardado[lugar.id]}
+                                </p>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                    <a
+                      className="mt-2 inline-flex items-center gap-1 text-[10px] text-[#858b82] underline underline-offset-2"
+                      href="https://www.openstreetmap.org/copyright"
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <Globe2 size={11} /> Datos © OpenStreetMap contributors
+                    </a>
+                  </section>
+                )}
+              </div>
+            )}
 
             <label className="mt-4 flex h-10 items-center gap-2.5 border border-[#dfe3db] bg-white px-3 text-[#7b8179] focus-within:border-[#718a72]">
               <Search size={16} />
