@@ -68,7 +68,7 @@ async function CatalogoLocalizaciones() {
           id: true,
           proyectoId: true,
           localizacionId: true,
-          estado: true,
+          estadoScouting: true,
           diasRodajeEstimados: true,
           notasProduccion: true,
           proyecto: { select: { id: true, nombre: true, tipo: true } },
@@ -90,7 +90,7 @@ async function CatalogoLocalizaciones() {
   });
   const proyectos = await prisma.proyecto.findMany({
     orderBy: { nombre: "asc" },
-    select: { id: true, nombre: true, tipo: true },
+    select: { id: true, nombre: true, tipo: true, productora: true, estado: true, notas: true },
   });
 
   return (

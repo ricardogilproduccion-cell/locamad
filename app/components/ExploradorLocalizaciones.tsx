@@ -60,13 +60,16 @@ interface ProyectoCatalogo {
   id: string;
   nombre: string;
   tipo: string;
+  productora?: string | null;
+  estado?: string;
+  notas?: string | null;
 }
 
 interface ProyectoAsignacion {
   id: string;
   proyectoId: string;
   localizacionId: string;
-  estado: string;
+  estadoScouting: string;
   diasRodajeEstimados: number | null;
   notasProduccion: string | null;
   proyecto: ProyectoCatalogo;
@@ -174,21 +177,37 @@ const aparcamientoLabel: Record<string, string> = {
 };
 
 const estadoProyectoLabel: Record<string, string> = {
-  PRESELECCIONADA: "Preseleccionada",
-  SCOUTING: "Scouting",
-  TRAMITANDO_PERMISO: "Tramitando permiso",
-  CONFIRMADA: "Confirmada",
+  EN_VALORACION: "En valoración",
+  PROPUESTA: "Propuesta",
+  PERMISO_SOLICITADO: "Permiso solicitado",
+  APROBADA: "Aprobada",
   DESCARTADA: "Descartada",
+  PRESELECCIONADA: "Propuesta",
+  SCOUTING: "En valoración",
+  TRAMITANDO_PERMISO: "Permiso solicitado",
+  CONFIRMADA: "Aprobada",
+};
+
+const estadoGeneralProyectoLabel: Record<string, string> = {
+  ACTIVO: "Activo",
+  PREPARACION: "Preparación",
+  RODAJE: "Rodaje",
+  POSTPRODUCCION: "Postproducción",
+  CERRADO: "Cerrado",
 };
 
 function colorEstadoProyecto(estado: string) {
   switch (estado) {
+    case "EN_VALORACION":
+    case "SCOUTING":
     case "PRESELECCIONADA":
       return "bg-[#e6edf7] text-[#3d5d84]";
-    case "SCOUTING":
+    case "PROPUESTA":
       return "bg-[#f4f0dc] text-[#806b2f]";
+    case "PERMISO_SOLICITADO":
     case "TRAMITANDO_PERMISO":
       return "bg-[#f9e9df] text-[#a24e32]";
+    case "APROBADA":
     case "CONFIRMADA":
       return "bg-[#e5f0e7] text-[#38684a]";
     case "DESCARTADA":
@@ -435,9 +454,11 @@ export default function ExploradorLocalizaciones({
       esZbe: localizacion.esZbe,
       distritoBarrio: localizacion.distritoBarrio,
       tipoEspacio: localizacion.tipoEspacio,
-      estadoProyecto: localizacion.asignaciones.find(
-        (asignacion) => asignacion.proyectoId === proyectoActivoId,
-      )?.estado ?? null,
+      estadoProyecto: (
+        proyectoActivoId === "todos"
+          ? localizacion.asignaciones[0]
+          : localizacion.asignaciones.find((asignacion) => asignacion.proyectoId === proyectoActivoId)
+      )?.estadoScouting ?? null,
     })),
     [filtradas, proyectoActivoId],
   );
@@ -557,7 +578,7 @@ export default function ExploradorLocalizaciones({
             localizacion.tipoEspacio,
             localizacion.direccion,
             [localizacion.municipio, localizacion.distritoBarrio].filter(Boolean).join(" / "),
-            asignacion ? estadoProyectoLabel[asignacion.estado] ?? asignacion.estado : "",
+            asignacion ? estadoProyectoLabel[asignacion.estadoScouting] ?? asignacion.estadoScouting : "",
             localizacion.potenciaElectricaKw,
             localizacion.galiboCamionesM,
             localizacion.aparcamientoSer === "LIBRE"
@@ -612,9 +633,11 @@ export default function ExploradorLocalizaciones({
               }}
               value={proyectoActivoId}
             >
-              <option value="todos">Todos los espacios</option>
+              <option value="todos">Todos los proyectos</option>
               {proyectos.map((proyecto) => (
-                <option key={proyecto.id} value={proyecto.id}>{proyecto.nombre}</option>
+                <option key={proyecto.id} value={proyecto.id}>
+                  {proyecto.nombre} · {estadoGeneralProyectoLabel[proyecto.estado ?? ""] ?? "Activo"}
+                </option>
               ))}
             </select>
           </label>
@@ -970,9 +993,11 @@ export default function ExploradorLocalizaciones({
               <div className="space-y-2.5">
                 {filtradas.map((localizacion, index) => {
                   const activa = localizacion.id === localizacionActivaId;
-                  const asignacionActiva = localizacion.asignaciones.find(
-                    (asignacion) => asignacion.proyectoId === proyectoActivoId,
-                  );
+                  const asignacionActiva = proyectoActivoId === "todos"
+                    ? localizacion.asignaciones[0]
+                    : localizacion.asignaciones.find(
+                      (asignacion) => asignacion.proyectoId === proyectoActivoId,
+                    );
                   return (
                     <article
                       aria-current={activa ? "true" : undefined}
@@ -1053,12 +1078,12 @@ export default function ExploradorLocalizaciones({
                         </span>
                       </span>
 
-                      <span className="mt-3 flex flex-wrap items-center gap-1.5">
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
                         {localizacion.esZbedepCentro && <span className="bg-[#f9e9df] px-2 py-1 text-[10px] font-semibold text-[#a24e32]">ZBEDEP Centro</span>}
                         {localizacion.esZbe && <span className="bg-[#f4f0dc] px-2 py-1 text-[10px] font-semibold text-[#826a2c]">ZBE Madrid</span>}
                         {asignacionActiva && (
-                          <span className={`px-2 py-1 text-[10px] font-semibold ${colorEstadoProyecto(asignacionActiva.estado)}`}>
-                            {estadoProyectoLabel[asignacionActiva.estado] ?? asignacionActiva.estado}
+                          <span className={`px-2 py-1 text-[10px] font-semibold ${colorEstadoProyecto(asignacionActiva.estadoScouting)}`}>
+                            {estadoProyectoLabel[asignacionActiva.estadoScouting] ?? asignacionActiva.estadoScouting}
                           </span>
                         )}
                         <button
@@ -1071,7 +1096,16 @@ export default function ExploradorLocalizaciones({
                         >
                           Ver detalles <ArrowUpRight size={14} />
                         </button>
-                      </span>
+                      </div>
+                      {puedeGestionar && proyectos.length > 0 && (
+                        <AsignarProyectoLocalizacion
+                          localizacionId={localizacion.id}
+                          proyectos={proyectos}
+                          asignaciones={localizacion.asignaciones}
+                          proyectoActivoId={proyectoActivoId}
+                          compact
+                        />
+                      )}
                     </article>
                   );
                 })}
@@ -1327,8 +1361,8 @@ export default function ExploradorLocalizaciones({
                                 <p className="text-sm font-semibold">{asignacion.proyecto.nombre}</p>
                                 <p className="mt-0.5 text-[11px] text-[#737a71]">{asignacion.proyecto.tipo.replaceAll("_", " ")}</p>
                               </div>
-                              <span className={`shrink-0 px-2 py-1 text-[10px] font-semibold ${colorEstadoProyecto(asignacion.estado)}`}>
-                                {estadoProyectoLabel[asignacion.estado] ?? asignacion.estado}
+                              <span className={`shrink-0 px-2 py-1 text-[10px] font-semibold ${colorEstadoProyecto(asignacion.estadoScouting)}`}>
+                                {estadoProyectoLabel[asignacion.estadoScouting] ?? asignacion.estadoScouting}
                               </span>
                             </div>
                             {asignacion.diasRodajeEstimados !== null && (
@@ -1477,6 +1511,16 @@ function NuevoProyectoModal({
               maxLength={160}
               name="productora"
               placeholder="Nombre de la productora"
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs font-medium text-[#50594f]">
+            Notas iniciales
+            <textarea
+              className="min-h-20 resize-y border border-[#dfe3db] bg-white px-3 py-2 text-sm font-normal text-[#20251f] outline-none placeholder:text-[#92988f] focus:border-[#718a72]"
+              maxLength={2000}
+              name="notas"
+              placeholder="Objetivos, fechas o referencias iniciales..."
+              rows={3}
             />
           </label>
           {state.status === "error" && (

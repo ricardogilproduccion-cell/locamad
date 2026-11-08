@@ -27,9 +27,16 @@ export async function crearProyecto(
   const nombre = String(formData.get("nombre") ?? "").trim();
   const tipo = String(formData.get("tipo") ?? "");
   const productora = String(formData.get("productora") ?? "").trim();
+  const notas = String(formData.get("notas") ?? "").trim();
 
-  if (!nombre || nombre.length > 120 || !tiposValidos.has(tipo) || productora.length > 160) {
-    return { status: "error", message: "Revisa el nombre, el tipo y la productora del proyecto." };
+  if (
+    !nombre ||
+    nombre.length > 120 ||
+    !tiposValidos.has(tipo) ||
+    productora.length > 160 ||
+    notas.length > 2000
+  ) {
+    return { status: "error", message: "Revisa el nombre, el tipo, la productora y las notas del proyecto." };
   }
 
   try {
@@ -38,6 +45,7 @@ export async function crearProyecto(
         nombre,
         tipo: tipo as TipoProyecto,
         productora: productora || null,
+        notas: notas || null,
       },
       select: { id: true },
     });
@@ -48,7 +56,8 @@ export async function crearProyecto(
       message: "Proyecto creado correctamente.",
       proyectoId: proyecto.id,
     };
-  } catch {
+  } catch (error) {
+    console.error("Could not create project.", error);
     return { status: "error", message: "No se pudo crear el proyecto. Inténtalo de nuevo." };
   }
 }

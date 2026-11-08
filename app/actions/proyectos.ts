@@ -25,12 +25,14 @@ export async function guardarAsignacionProyecto(
   }
 
   const proyectoId = String(formData.get("proyectoId") ?? "");
-  const estado = String(formData.get("estado") ?? "");
+  const estadoScouting = String(formData.get("estadoScouting") ?? formData.get("estado") ?? "");
+  const incluyeDias = formData.has("diasRodajeEstimados");
   const diasTexto = String(formData.get("diasRodajeEstimados") ?? "").trim();
+  const incluyeNotas = formData.has("notasProduccion");
   const notasProduccion = String(formData.get("notasProduccion") ?? "").trim();
   const diasRodajeEstimados = diasTexto ? Number(diasTexto) : null;
 
-  if (!proyectoId || !estadosValidos.has(estado)) {
+  if (!proyectoId || !estadosValidos.has(estadoScouting)) {
     return { status: "error", message: "Selecciona un proyecto y un estado válidos." };
   }
   if (
@@ -49,19 +51,20 @@ export async function guardarAsignacionProyecto(
         proyectoId_localizacionId: { proyectoId, localizacionId },
       },
       update: {
-        estado: estado as EstadoProyectoLocalizacion,
-        diasRodajeEstimados,
-        notasProduccion: notasProduccion || null,
+        estadoScouting: estadoScouting as EstadoProyectoLocalizacion,
+        diasRodajeEstimados: incluyeDias ? diasRodajeEstimados : undefined,
+        notasProduccion: incluyeNotas ? notasProduccion || null : undefined,
       },
       create: {
         proyectoId,
         localizacionId,
-        estado: estado as EstadoProyectoLocalizacion,
+        estadoScouting: estadoScouting as EstadoProyectoLocalizacion,
         diasRodajeEstimados,
         notasProduccion: notasProduccion || null,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Could not save project-location assignment.", error);
     return { status: "error", message: "No se pudo guardar la asignación del proyecto." };
   }
 

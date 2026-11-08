@@ -17,6 +17,7 @@ enum RolUsuario {
 }
 
 enum EstadoProyecto {
+  ACTIVO
   PREPARACION
   RODAJE
   POSTPRODUCCION
@@ -31,11 +32,15 @@ enum TipoProyecto {
 }
 
 enum EstadoProyectoLocalizacion {
+  EN_VALORACION
+  PROPUESTA
+  PERMISO_SOLICITADO
+  APROBADA
+  DESCARTADA
   PRESELECCIONADA
   SCOUTING
   TRAMITANDO_PERMISO
   CONFIRMADA
-  DESCARTADA
 }
 
 enum EstadoLocalizacion {
@@ -79,74 +84,75 @@ model Usuario {
 }
 
 model Proyecto {
-  id             String          @id @default(uuid())
+  id             String                 @id @default(uuid())
   nombre         String
-  tipo           TipoProyecto    @default(LARGOMETRAJE)
+  tipo           TipoProyecto           @default(LARGOMETRAJE)
   productora     String?
-  estado         EstadoProyecto  @default(PREPARACION)
+  notas          String?
+  estado         EstadoProyecto         @default(ACTIVO)
   fechaInicio    DateTime?
   fechaFin       DateTime?
   localizaciones Localizacion[]
   asignaciones   ProyectoLocalizacion[]
   permisos       Permiso[]
   presupuestos   Presupuesto[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @default(now()) @updatedAt
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @default(now()) @updatedAt
 }
 
 model Localizacion {
-  id               String             @id @default(uuid())
-  nombre           String
-  tipoEspacio      String             // Vivienda, nave industrial, vía pública, oficina, etc.
-  estilo           String?            // Moderno, brutalista, años 70, etc.
-  direccion        String
-  municipio        String             // Madrid, Alcalá de Henares, etc.
-  distritoBarrio   String?
-  latitud          Float
-  longitud         Float
-  titularidad      String             // Privada, municipal, autonómica, etc.
-  
+  id             String  @id @default(uuid())
+  nombre         String
+  tipoEspacio    String // Vivienda, nave industrial, vía pública, oficina, etc.
+  estilo         String? // Moderno, brutalista, años 70, etc.
+  direccion      String
+  municipio      String // Madrid, Alcalá de Henares, etc.
+  distritoBarrio String?
+  latitud        Float
+  longitud       Float
+  titularidad    String // Privada, municipal, autonómica, etc.
+
   // Logística y accesos
   potenciaElectricaKw Float?
-  tomaAgua         Boolean            @default(false)
-  aseosDisponibles Boolean            @default(false)
-  galiboCamionesM  Float?
-  espacioBaseProd  Boolean            @default(false)
-  
-  // Acústica y luz
-  nivelRuidoDb     Int?
-  orientacionLuz   String?            // Norte, Sur, Este, Oeste
-  
-  // ZBE y movilidad
-  esZbe            Boolean            @default(false)
-  esZbedepCentro   Boolean            @default(false)
-  aparcamientoSer  TipoAparcamiento   @default(LIBRE)
-  
-  valoracion       Int                @default(4)
-  estado           EstadoLocalizacion @default(PROPUESTA)
-  
-  proyectoId       String?
-  proyecto         Proyecto?          @relation(fields: [proyectoId], references: [id])
-  asignaciones     ProyectoLocalizacion[]
-  contactos        Contacto[]
-  permisos         Permiso[]
-  gastos           Gasto[]
-  fotos            String[]           @default([])
+  tomaAgua            Boolean @default(false)
+  aseosDisponibles    Boolean @default(false)
+  galiboCamionesM     Float?
+  espacioBaseProd     Boolean @default(false)
 
-  createdAt        DateTime           @default(now())
+  // Acústica y luz
+  nivelRuidoDb   Int?
+  orientacionLuz String? // Norte, Sur, Este, Oeste
+
+  // ZBE y movilidad
+  esZbe           Boolean          @default(false)
+  esZbedepCentro  Boolean          @default(false)
+  aparcamientoSer TipoAparcamiento @default(LIBRE)
+
+  valoracion Int                @default(4)
+  estado     EstadoLocalizacion @default(PROPUESTA)
+
+  proyectoId   String?
+  proyecto     Proyecto?              @relation(fields: [proyectoId], references: [id])
+  asignaciones ProyectoLocalizacion[]
+  contactos    Contacto[]
+  permisos     Permiso[]
+  gastos       Gasto[]
+  fotos        String[]               @default([])
+
+  createdAt DateTime @default(now())
 }
 
 model ProyectoLocalizacion {
-  id                  String                    @id @default(uuid())
+  id                  String                     @id @default(uuid())
   proyectoId          String
   localizacionId      String
-  estado              EstadoProyectoLocalizacion @default(PRESELECCIONADA)
+  estadoScouting      EstadoProyectoLocalizacion @default(EN_VALORACION) @map("estado")
   diasRodajeEstimados Int?
   notasProduccion     String?
-  proyecto            Proyecto                  @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
-  localizacion        Localizacion              @relation(fields: [localizacionId], references: [id], onDelete: Cascade)
-  createdAt           DateTime                  @default(now())
-  updatedAt           DateTime                  @default(now()) @updatedAt
+  proyecto            Proyecto                   @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  localizacion        Localizacion               @relation(fields: [localizacionId], references: [id], onDelete: Cascade)
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @default(now()) @updatedAt
 
   @@unique([proyectoId, localizacionId])
   @@index([localizacionId])
@@ -157,47 +163,47 @@ model Contacto {
   nombre         String
   telefono       String?
   email          String?
-  rolCargo       String?      // Propietario, conserje, administrador, etc.
+  rolCargo       String? // Propietario, conserje, administrador, etc.
   notasTrato     String?
   localizacionId String
   localizacion   Localizacion @relation(fields: [localizacionId], references: [id], onDelete: Cascade)
 }
 
 model Permiso {
-  id                 String         @id @default(uuid())
-  tipo               TipoPermiso    @default(OCUPACION_VIA_PUBLICA)
-  estado             EstadoPermiso  @default(BORRADOR)
-  numeroRegistro     String?
-  organismo          String         // Ej: Negociado de Rodajes Ayto Madrid
-  fechaSolicitud     DateTime?
-  fechaRodajeInicio  DateTime
-  fechaRodajeFin     DateTime
-  metrosCordon       Float          @default(0)
-  metrosBateria      Float          @default(0)
-  tasaEstimadaEur    Float          @default(0)
-  
-  proyectoId         String
-  proyecto           Proyecto       @relation(fields: [proyectoId], references: [id])
-  localizacionId     String?
-  localizacion       Localizacion?  @relation(fields: [localizacionId], references: [id])
-  vehiculos          VehiculoTecnico[]
+  id                String        @id @default(uuid())
+  tipo              TipoPermiso   @default(OCUPACION_VIA_PUBLICA)
+  estado            EstadoPermiso @default(BORRADOR)
+  numeroRegistro    String?
+  organismo         String // Ej: Negociado de Rodajes Ayto Madrid
+  fechaSolicitud    DateTime?
+  fechaRodajeInicio DateTime
+  fechaRodajeFin    DateTime
+  metrosCordon      Float         @default(0)
+  metrosBateria     Float         @default(0)
+  tasaEstimadaEur   Float         @default(0)
 
-  createdAt          DateTime       @default(now())
+  proyectoId     String
+  proyecto       Proyecto          @relation(fields: [proyectoId], references: [id])
+  localizacionId String?
+  localizacion   Localizacion?     @relation(fields: [localizacionId], references: [id])
+  vehiculos      VehiculoTecnico[]
+
+  createdAt DateTime @default(now())
 }
 
 model VehiculoTecnico {
   id          String   @id @default(uuid())
-  matricula   String   // Formato para ZBEDEP Centro: 1234BBB
-  tipo        String   // Camión, furgoneta, grupo electrógeno
+  matricula   String // Formato para ZBEDEP Centro: 1234BBB
+  tipo        String // Camión, furgoneta, grupo electrógeno
   fechaAcceso DateTime
   permisoId   String
   permiso     Permiso  @relation(fields: [permisoId], references: [id], onDelete: Cascade)
 }
 
 model Presupuesto {
-  id           String   @id @default(uuid())
-  proyectoId   String
-  proyecto     Proyecto @relation(fields: [proyectoId], references: [id])
+  id            String   @id @default(uuid())
+  proyectoId    String
+  proyecto      Proyecto @relation(fields: [proyectoId], references: [id])
   totalEstimado Float    @default(0)
 }
 
