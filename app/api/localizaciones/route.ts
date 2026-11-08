@@ -116,6 +116,14 @@ export async function POST(request: Request) {
   const nombre = typeof data.nombre === "string" ? data.nombre.trim() : "";
   const direccion = typeof data.direccion === "string" ? data.direccion.trim() : "";
   const municipio = typeof data.municipio === "string" ? data.municipio.trim() : "";
+  const tipoEspacio =
+    data.tipoEspacio === undefined
+      ? "Exterior"
+      : typeof data.tipoEspacio === "string"
+        ? data.tipoEspacio.trim()
+        : "";
+  const distritoBarrio =
+    typeof data.distritoBarrio === "string" ? data.distritoBarrio.trim() : null;
   const latitud = data.latitud;
   const longitud = data.longitud;
 
@@ -124,8 +132,13 @@ export async function POST(request: Request) {
     nombre.length > 200 ||
     !direccion ||
     direccion.length > 500 ||
+    !tipoEspacio ||
+    tipoEspacio.length > 120 ||
     !municipio ||
     municipio.length > 120 ||
+    (data.distritoBarrio !== undefined &&
+      data.distritoBarrio !== null &&
+      (typeof data.distritoBarrio !== "string" || data.distritoBarrio.length > 120)) ||
     typeof latitud !== "number" ||
     !Number.isFinite(latitud) ||
     latitud < -90 ||
@@ -148,10 +161,11 @@ export async function POST(request: Request) {
     const localizacion = await prisma.localizacion.create({
       data: {
         nombre,
-        tipoEspacio: "Exterior",
+        tipoEspacio,
         estilo: null,
         direccion,
         municipio,
+        distritoBarrio,
         latitud,
         longitud,
         titularidad: "Por confirmar",

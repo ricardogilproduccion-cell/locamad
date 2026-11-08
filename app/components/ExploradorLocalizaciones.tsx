@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState, type FormEvent } from "rea
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
+import * as SunCalc from "suncalc";
 import { nombreRol, puedeGestionarLocalizaciones } from "@/lib/roles";
 import {
   ArrowUpRight,
@@ -109,9 +110,45 @@ interface ResultadoInternet {
   direccion: string;
   lat: number;
   lng: number;
+  municipio: string;
+  distritoBarrio: string | null;
+  tipoEspacio: string;
 }
 
 type AmbitoBusqueda = "todo" | "catalogo" | "internet";
+
+const filtrosProduccion = [
+  {
+    id: "vintage",
+    etiqueta: "Años 70-80 / Vintage",
+    terminos: ["anos 70", "anos 80", "setenta", "ochenta", "vintage"],
+  },
+  {
+    id: "brutalismo",
+    etiqueta: "Brutalismo / Institucional",
+    terminos: ["brutal", "institucional"],
+  },
+  {
+    id: "industrial",
+    etiqueta: "Nave / Industrial",
+    terminos: ["nave", "industrial", "fabrica", "almacen"],
+  },
+  {
+    id: "sanitario",
+    etiqueta: "Hospital / Comisaría",
+    terminos: ["hospital", "clinica", "comisaria", "policia"],
+  },
+  {
+    id: "vivienda",
+    etiqueta: "Vivienda / Ático",
+    terminos: ["vivienda", "atico", "piso", "casa"],
+  },
+  {
+    id: "comercial",
+    etiqueta: "Comercial / Farmacia",
+    terminos: ["comercial", "farmacia", "tienda", "local"],
+  },
+] as const;
 
 const estadoLabel: Record<string, string> = {
   PROPUESTA: "Propuesta",
@@ -176,6 +213,7 @@ export default function ExploradorLocalizaciones({
     ),
   ];
   const [busqueda, setBusqueda] = useState("");
+  const [filtroProduccionActivo, setFiltroProduccionActivo] = useState<string | null>(null);
   const [busquedaGlobal, setBusquedaGlobal] = useState("");
   const [zonaBusqueda, setZonaBusqueda] = useState("Madrid");
   const [ambitoBusqueda, setAmbitoBusqueda] = useState<AmbitoBusqueda>("todo");
@@ -276,7 +314,9 @@ export default function ExploradorLocalizaciones({
         body: JSON.stringify({
           nombre: lugar.nombre,
           direccion: lugar.direccion,
-          municipio: zonaBusqueda.trim() || "Madrid",
+          municipio: lugar.municipio || zonaBusqueda.trim() || "Madrid",
+          distritoBarrio: lugar.distritoBarrio,
+          tipoEspacio: lugar.tipoEspacio,
           latitud: lugar.lat,
           longitud: lugar.lng,
         }),
@@ -296,6 +336,23 @@ export default function ExploradorLocalizaciones({
           ? actuales
           : [localizacionGuardada, ...actuales],
       );
+      setResultadosCatalogo((actuales) => {
+        const resultadoGuardado: ResultadoCatalogo = {
+          id: localizacionGuardada.id,
+          nombre: localizacionGuardada.nombre,
+          tipoEspacio: localizacionGuardada.tipoEspacio,
+          estilo: localizacionGuardada.estilo,
+          direccion: localizacionGuardada.direccion,
+          municipio: localizacionGuardada.municipio,
+          distritoBarrio: localizacionGuardada.distritoBarrio,
+          latitud: localizacionGuardada.latitud,
+          longitud: localizacionGuardada.longitud,
+        };
+        return [
+          resultadoGuardado,
+          ...actuales.filter((resultado) => resultado.id !== resultadoGuardado.id),
+        ];
+      });
       setIdsAñadidos((actuales) => [...actuales, lugar.id]);
       setNotificacion(
         data.creada ? "Localización añadida a tu catálogo." : "Esta localización ya estaba en tu catálogo.",
@@ -311,14 +368,19 @@ export default function ExploradorLocalizaciones({
   };
 
   const termino = normalizar(busqueda.trim());
+  const filtroProduccion = filtrosProduccion.find(
+    (filtro) => filtro.id === filtroProduccionActivo,
+  );
   const minimoKw = potenciaMinima === "" ? null : Number(potenciaMinima);
   const filtradas = localizacionesCatalogo.filter((localizacion) => {
     const texto = normalizar(
-      `${localizacion.nombre} ${localizacion.direccion} ${localizacion.distritoBarrio ?? ""}`,
+      `${localizacion.nombre} ${localizacion.tipoEspacio} ${localizacion.estilo ?? ""} ${localizacion.direccion} ${localizacion.municipio} ${localizacion.distritoBarrio ?? ""}`,
     );
 
     return (
       (!termino || texto.includes(termino)) &&
+      (!filtroProduccion ||
+        filtroProduccion.terminos.some((palabra) => texto.includes(normalizar(palabra)))) &&
       (!soloZbedep || localizacion.esZbedepCentro) &&
       (!soloBase || localizacion.espacioBaseProd) &&
       (proyectoActivoId === "todos" || localizacion.asignaciones.some((asignacion) => asignacion.proyectoId === proyectoActivoId)) &&
@@ -652,7 +714,7 @@ export default function ExploradorLocalizaciones({
                   </p>
                 )}
 
-                {ambitoBusqueda !== "internet" && (
+                {(ambitoBusqueda !== "internet" || resultadosCatalogo.length > 0) && (
                   <section aria-labelledby="resultados-catalogo-titulo">
                     <h2
                       className="text-xs font-bold text-[#315d48]"
@@ -724,7 +786,12 @@ export default function ExploradorLocalizaciones({
                                   <ExternalLink size={12} /> Ver en Maps
                                 </a>
                                 <button
-                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#315d48] disabled:cursor-not-allowed disabled:opacity-60"
+                                  aria-live="polite"
+                                  className={`inline-flex h-8 items-center gap-1.5 border px-2.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${
+                                    añadido
+                                      ? "border-[#b8d2bf] bg-[#edf5ee] text-[#285c3e]"
+                                      : "border-[#315d48] bg-[#315d48] text-white hover:bg-[#244b39]"
+                                  } disabled:opacity-70`}
                                   disabled={!puedeGestionar || añadido || guardando}
                                   onClick={() => void añadirAlCatalogo(lugar)}
                                   title={
@@ -741,7 +808,11 @@ export default function ExploradorLocalizaciones({
                                   ) : (
                                     <Plus size={13} />
                                   )}
-                                  {añadido ? "Añadido" : "Añadir a mi catálogo"}
+                                  {guardando
+                                    ? "Guardando..."
+                                    : añadido
+                                      ? "En tu catálogo"
+                                      : "Añadir a mi catálogo"}
                                 </button>
                               </div>
                               {erroresGuardado[lugar.id] && (
@@ -774,6 +845,7 @@ export default function ExploradorLocalizaciones({
                 className="h-full min-w-0 flex-1 bg-transparent text-sm text-[#20251f] outline-none placeholder:text-[#92988f]"
                 onChange={(event) => {
                   setBusqueda(event.target.value);
+                  setFiltroProduccionActivo(null);
                   setLocalizacionActivaId(null);
                 }}
                 placeholder="Nombre, calle o barrio..."
@@ -782,6 +854,33 @@ export default function ExploradorLocalizaciones({
               />
               <SlidersHorizontal size={15} aria-hidden="true" />
             </label>
+
+            <div className="mt-3">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[#788276]">
+                Filtros rápidos de rodaje
+              </p>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {filtrosProduccion.map((filtro) => (
+                  <button
+                    aria-pressed={filtroProduccionActivo === filtro.id}
+                    className={`shrink-0 border px-2.5 py-1.5 text-[10px] font-semibold transition-colors ${
+                      filtroProduccionActivo === filtro.id
+                        ? "border-[#315d48] bg-[#315d48] text-white"
+                        : "border-[#dfe3db] bg-white text-[#596158] hover:border-[#9eac9d]"
+                    }`}
+                    key={filtro.id}
+                    onClick={() => {
+                      setBusqueda("");
+                      setFiltroProduccionActivo((activo) => activo === filtro.id ? null : filtro.id);
+                      setLocalizacionActivaId(null);
+                    }}
+                    type="button"
+                  >
+                    {filtro.etiqueta}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="mt-2.5 flex flex-wrap gap-2">
               <button
@@ -1034,6 +1133,7 @@ export default function ExploradorLocalizaciones({
                   <Detail label="Estilo" value={localizacionActiva.estilo} />
                   <Detail label="Titularidad" value={localizacionActiva.titularidad} />
                   <Detail label="Municipio" value={localizacionActiva.municipio} />
+                  <Detail label="Distrito / barrio" value={localizacionActiva.distritoBarrio} />
                   <Detail label="Coordenadas" value={`${localizacionActiva.latitud.toFixed(5)}, ${localizacionActiva.longitud.toFixed(5)}`} />
                   <Detail label="Valoración" value={`${localizacionActiva.valoracion} / 5`} />
                 </dl>
@@ -1055,8 +1155,44 @@ export default function ExploradorLocalizaciones({
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Luz y sonido</h3>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
                   <Detail icon={<Sun size={14} />} label="Orientación solar" value={localizacionActiva.orientacionLuz} />
+                  <Detail
+                    icon={<Compass size={14} />}
+                    label="Azimut solar aprox. ahora"
+                    value={(() => {
+                      const posicion = SunCalc.getPosition(
+                        new Date(),
+                        localizacionActiva.latitud,
+                        localizacionActiva.longitud,
+                      );
+                      const azimut = (posicion.azimuth * 180 / Math.PI + 360) % 360;
+                      const cardinales = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+                      const cardinal = cardinales[Math.round(azimut / 45) % cardinales.length];
+                      return `${azimut.toFixed(0)}° (${cardinal})`;
+                    })()}
+                  />
                   <Detail icon={<Volume2 size={14} />} label="Nivel de ruido" value={localizacionActiva.nivelRuidoDb != null ? `${localizacionActiva.nivelRuidoDb} dB` : null} />
                 </dl>
+                <p className="mt-2 text-[10px] leading-4 text-[#7b8179]">
+                  Azimut solar aproximado para la hora actual; no representa la orientación medida de la fachada.
+                </p>
+                <div className="locamad-no-print mt-3 flex flex-wrap gap-2">
+                  <a
+                    className="inline-flex h-8 items-center gap-1.5 border border-[#dfe3db] bg-white px-2.5 text-[11px] font-semibold text-[#315d48] hover:bg-[#f5f6f3]"
+                    href={`https://app.photoephemeris.com/?ll=${localizacionActiva.latitud},${localizacionActiva.longitud}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLink size={12} /> Calcular luz solar
+                  </a>
+                  <a
+                    className="inline-flex h-8 items-center gap-1.5 border border-[#dfe3db] bg-white px-2.5 text-[11px] font-semibold text-[#315d48] hover:bg-[#f5f6f3]"
+                    href={`https://www.google.com/maps/@?api=1&map_action=map&center=${localizacionActiva.latitud},${localizacionActiva.longitud}&zoom=19&basemap=satellite&tilt=45`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLink size={12} /> Google Maps 3D
+                  </a>
+                </div>
               </section>
 
               <section className="border-t border-[#e1e4dd] pt-5">

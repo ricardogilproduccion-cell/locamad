@@ -5,9 +5,34 @@ interface NominatimPlace {
   display_name: string;
   lat: string;
   lon: string;
+  address?: Record<string, string>;
 }
 
 let ultimaConsultaNominatim = 0;
+
+function esRegistroDeCadenas(value: unknown): value is Record<string, string> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((item) => typeof item === "string")
+  );
+}
+
+function inferirTipoEspacio(query: string) {
+  const termino = query
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es");
+
+  if (/vintage|anos? 7[08]|setenta|ochenta/.test(termino)) return "Interior vintage";
+  if (/brutal|institucional/.test(termino)) return "Edificio institucional";
+  if (/nave|industrial|fabrica|almacen/.test(termino)) return "Nave industrial";
+  if (/hospital|clinica|comisaria|policia/.test(termino)) return "Hospital / comisaría";
+  if (/vivienda|atico|piso|casa/.test(termino)) return "Vivienda";
+  if (/comercial|farmacia|tienda|local/.test(termino)) return "Local comercial";
+  return "Exterior";
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -68,7 +93,8 @@ export async function GET(request: Request) {
           typeof place.display_name === "string" &&
           typeof place.lat === "string" &&
           typeof place.lon === "string" &&
-          (!("name" in place) || typeof place.name === "string"),
+          (!("name" in place) || typeof place.name === "string") &&
+          (!("address" in place) || esRegistroDeCadenas(place.address)),
       )
       .map((place) => ({
         id: `${place.osm_type}-${place.osm_id}`,
@@ -76,6 +102,20 @@ export async function GET(request: Request) {
         direccion: place.display_name,
         lat: Number(place.lat),
         lng: Number(place.lon),
+        municipio:
+          place.address?.city ??
+          place.address?.town ??
+          place.address?.village ??
+          place.address?.municipality ??
+          zone,
+        distritoBarrio:
+          place.address?.city_district ??
+          place.address?.suburb ??
+          place.address?.borough ??
+          place.address?.neighbourhood ??
+          place.address?.quarter ??
+          null,
+        tipoEspacio: inferirTipoEspacio(query),
       }))
       .filter(
         (place) =>
