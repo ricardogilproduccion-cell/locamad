@@ -17,8 +17,11 @@ interface LocalizacionMapItem {
 interface MapaLocalizacionesClienteProps {
   items: LocalizacionMapItem[];
   activeId: string | null;
+  focusedId: string | null;
   focusRequest: number;
   onSelect: (id: string) => void;
+  onFocus: (id: string) => void;
+  onPinSelect: (id: string) => void;
 }
 
 const MapaLocalizaciones = dynamic(() => import("./MapaLocalizaciones"), {
@@ -33,15 +36,21 @@ const MapaLocalizaciones = dynamic(() => import("./MapaLocalizaciones"), {
 export default function MapaLocalizacionesCliente({
   items,
   activeId,
+  focusedId,
   focusRequest,
   onSelect,
+  onFocus,
+  onPinSelect,
 }: MapaLocalizacionesClienteProps) {
   return (
     <MapaLocalizaciones
       activeId={activeId}
+      focusedId={focusedId}
       focusRequest={focusRequest}
       items={items}
       onSelect={onSelect}
+      onFocus={onFocus}
+      onPinSelect={onPinSelect}
     />
   );
 }

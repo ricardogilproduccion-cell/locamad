@@ -1,8 +1,16 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useActionState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { signOut } from "next-auth/react";
 import * as SunCalc from "suncalc";
 import { nombreRol, puedeGestionarLocalizaciones } from "@/lib/roles";
@@ -24,9 +32,9 @@ import {
   Plus,
   Phone,
   Printer,
+  Route,
   Search,
   Save,
-  SlidersHorizontal,
   Sun,
   Truck,
   Volume2,
@@ -64,6 +72,17 @@ interface ProyectoAsignacion {
   proyecto: ProyectoCatalogo;
 }
 
+interface PermisoLocalizacion {
+  id: string;
+  tipo: string;
+  estado: string;
+  numeroRegistro: string | null;
+  organismo: string;
+  fechaSolicitud: Date | string | null;
+  fechaRodajeInicio: Date | string;
+  fechaRodajeFin: Date | string;
+}
+
 interface Localizacion {
   id: string;
   nombre: string;
@@ -90,18 +109,7 @@ interface Localizacion {
   valoracion: number;
   estado: string;
   contactos: ContactoLocalizacion[];
-}
-
-interface ResultadoCatalogo {
-  id: string;
-  nombre: string;
-  tipoEspacio: string;
-  estilo: string | null;
-  direccion: string;
-  municipio: string;
-  distritoBarrio: string | null;
-  latitud: number;
-  longitud: number;
+  permisos: PermisoLocalizacion[];
 }
 
 interface ResultadoInternet {
@@ -194,6 +202,13 @@ function normalizar(texto: string) {
   return texto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es");
 }
 
+function obtenerAzimutSolar(latitud: number, longitud: number) {
+  const posicion = SunCalc.getPosition(new Date(), latitud, longitud);
+  const azimut = (posicion.azimuth * 180 / Math.PI + 360) % 360;
+  const cardinales = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+  return `${azimut.toFixed(0)}° (${cardinales[Math.round(azimut / 45) % cardinales.length]})`;
+}
+
 export default function ExploradorLocalizaciones({
   localizaciones,
   proyectos,
@@ -206,22 +221,21 @@ export default function ExploradorLocalizaciones({
   const router = useRouter();
   const puedeGestionar = puedeGestionarLocalizaciones(usuario?.rol);
   const [localizacionesNuevas, setLocalizacionesNuevas] = useState<Localizacion[]>([]);
-  const localizacionesCatalogo = [
-    ...localizaciones,
-    ...localizacionesNuevas.filter(
-      (nueva) => !localizaciones.some((localizacion) => localizacion.id === nueva.id),
-    ),
-  ];
+  const localizacionesCatalogo = useMemo(
+    () => [
+      ...localizaciones,
+      ...localizacionesNuevas.filter(
+        (nueva) => !localizaciones.some((localizacion) => localizacion.id === nueva.id),
+      ),
+    ],
+    [localizaciones, localizacionesNuevas],
+  );
   const [busqueda, setBusqueda] = useState("");
   const [filtroProduccionActivo, setFiltroProduccionActivo] = useState<string | null>(null);
-  const [busquedaGlobal, setBusquedaGlobal] = useState("");
   const [zonaBusqueda, setZonaBusqueda] = useState("Madrid");
   const [ambitoBusqueda, setAmbitoBusqueda] = useState<AmbitoBusqueda>("todo");
-  const [resultadosCatalogo, setResultadosCatalogo] = useState<ResultadoCatalogo[]>([]);
   const [resultadosInternet, setResultadosInternet] = useState<ResultadoInternet[]>([]);
-  const [busquedaEjecutada, setBusquedaEjecutada] = useState(false);
   const [buscando, setBuscando] = useState(false);
-  const [errorCatalogo, setErrorCatalogo] = useState("");
   const [errorInternet, setErrorInternet] = useState("");
   const [erroresGuardado, setErroresGuardado] = useState<Record<string, string>>({});
   const [idsGuardando, setIdsGuardando] = useState<string[]>([]);
@@ -230,73 +244,87 @@ export default function ExploradorLocalizaciones({
   const [soloBase, setSoloBase] = useState(false);
   const [potenciaMinima, setPotenciaMinima] = useState("");
   const [localizacionActivaId, setLocalizacionActivaId] = useState<string | null>(null);
+  const [localizacionEnfocadaId, setLocalizacionEnfocadaId] = useState<string | null>(null);
+  const [localizacionResaltadaId, setLocalizacionResaltadaId] = useState<string | null>(null);
   const [solicitudFocoMapa, setSolicitudFocoMapa] = useState(0);
   const [modalNuevaLocalizacion, setModalNuevaLocalizacion] = useState(false);
   const [modalNuevoProyecto, setModalNuevoProyecto] = useState(false);
   const [notificacion, setNotificacion] = useState("");
   const [proyectoActivoId, setProyectoActivoId] = useState("todos");
+  const [localizacionesSeleccionadas, setLocalizacionesSeleccionadas] = useState<string[]>([]);
+  const [dossierLocalizaciones, setDossierLocalizaciones] = useState<Localizacion[] | null>(null);
+  const secuenciaBusqueda = useRef(0);
+  const localizacionEnfocadaRef = useRef<string | null>(null);
 
-  const seleccionarLocalizacion = (id: string) => {
-    setLocalizacionActivaId(id);
+  const enfocarLocalizacion = useCallback((id: string) => {
+    if (localizacionEnfocadaRef.current === id) return;
+    localizacionEnfocadaRef.current = id;
+    setLocalizacionEnfocadaId(id);
     setSolicitudFocoMapa((solicitud) => solicitud + 1);
-  };
+  }, []);
 
-  const buscarGlobalmente = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const query = busquedaGlobal.trim();
-    const zona = zonaBusqueda.trim() || "Madrid";
-    if (!query || buscando) return;
+  const seleccionarLocalizacion = useCallback((id: string) => {
+    localizacionEnfocadaRef.current = id;
+    setLocalizacionActivaId(id);
+    setLocalizacionEnfocadaId(id);
+    setLocalizacionResaltadaId(id);
+    setSolicitudFocoMapa((solicitud) => solicitud + 1);
+  }, []);
 
+  const seleccionarPinMapa = useCallback((id: string) => {
+    enfocarLocalizacion(id);
+    setLocalizacionResaltadaId(id);
+    setSolicitudFocoMapa((solicitud) => solicitud + 1);
+  }, [enfocarLocalizacion]);
+
+  useEffect(() => {
+    const query = busqueda.trim();
+    const sequence = ++secuenciaBusqueda.current;
+
+    if (!query || ambitoBusqueda === "catalogo") {
+      setResultadosInternet([]);
+      setBuscando(false);
+      setErrorInternet("");
+      return;
+    }
+
+    const controller = new AbortController();
     setBuscando(true);
-    setBusquedaEjecutada(true);
-    setResultadosCatalogo([]);
-    setResultadosInternet([]);
-    setErrorCatalogo("");
     setErrorInternet("");
+    setResultadosInternet([]);
 
-    const tareas: Promise<void>[] = [];
-    if (ambitoBusqueda !== "internet") {
-      tareas.push(
-        fetch(`/api/localizaciones?q=${encodeURIComponent(query)}`)
-          .then(async (response) => {
-            const data = (await response.json()) as {
-              results?: ResultadoCatalogo[];
-              error?: string;
-            };
-            if (!response.ok) throw new Error(data.error || "No se pudo buscar en el catálogo.");
-            setResultadosCatalogo(data.results ?? []);
-          })
-          .catch((error: unknown) => {
-            setErrorCatalogo(
-              error instanceof Error ? error.message : "No se pudo buscar en el catálogo.",
-            );
-          }),
-      );
-    }
+    const timer = window.setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          q: query,
+          zona: zonaBusqueda.trim() || "Madrid",
+        });
+        const response = await fetch(`/api/scouting/search?${params}`, {
+          signal: controller.signal,
+        });
+        const data = (await response.json()) as {
+          results?: ResultadoInternet[];
+          error?: string;
+        };
+        if (!response.ok) throw new Error(data.error || "No se pudo buscar en internet.");
+        if (sequence === secuenciaBusqueda.current) {
+          setResultadosInternet(data.results ?? []);
+        }
+      } catch (error) {
+        if (controller.signal.aborted || sequence !== secuenciaBusqueda.current) return;
+        setErrorInternet(
+          error instanceof Error ? error.message : "No se pudo buscar en internet.",
+        );
+      } finally {
+        if (sequence === secuenciaBusqueda.current) setBuscando(false);
+      }
+    }, 1100);
 
-    if (ambitoBusqueda !== "catalogo") {
-      const params = new URLSearchParams({ q: query, zona });
-      tareas.push(
-        fetch(`/api/scouting/search?${params}`)
-          .then(async (response) => {
-            const data = (await response.json()) as {
-              results?: ResultadoInternet[];
-              error?: string;
-            };
-            if (!response.ok) throw new Error(data.error || "No se pudo buscar en internet.");
-            setResultadosInternet(data.results ?? []);
-          })
-          .catch((error: unknown) => {
-            setErrorInternet(
-              error instanceof Error ? error.message : "No se pudo buscar en internet.",
-            );
-          }),
-      );
-    }
-
-    await Promise.all(tareas);
-    setBuscando(false);
-  };
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [ambitoBusqueda, busqueda, zonaBusqueda]);
 
   const añadirAlCatalogo = async (lugar: ResultadoInternet) => {
     if (!puedeGestionar || idsGuardando.includes(lugar.id)) return;
@@ -336,23 +364,6 @@ export default function ExploradorLocalizaciones({
           ? actuales
           : [localizacionGuardada, ...actuales],
       );
-      setResultadosCatalogo((actuales) => {
-        const resultadoGuardado: ResultadoCatalogo = {
-          id: localizacionGuardada.id,
-          nombre: localizacionGuardada.nombre,
-          tipoEspacio: localizacionGuardada.tipoEspacio,
-          estilo: localizacionGuardada.estilo,
-          direccion: localizacionGuardada.direccion,
-          municipio: localizacionGuardada.municipio,
-          distritoBarrio: localizacionGuardada.distritoBarrio,
-          latitud: localizacionGuardada.latitud,
-          longitud: localizacionGuardada.longitud,
-        };
-        return [
-          resultadoGuardado,
-          ...actuales.filter((resultado) => resultado.id !== resultadoGuardado.id),
-        ];
-      });
       setIdsAñadidos((actuales) => [...actuales, lugar.id]);
       setNotificacion(
         data.creada ? "Localización añadida a tu catálogo." : "Esta localización ya estaba en tu catálogo.",
@@ -372,35 +383,98 @@ export default function ExploradorLocalizaciones({
     (filtro) => filtro.id === filtroProduccionActivo,
   );
   const minimoKw = potenciaMinima === "" ? null : Number(potenciaMinima);
-  const filtradas = localizacionesCatalogo.filter((localizacion) => {
-    const texto = normalizar(
-      `${localizacion.nombre} ${localizacion.tipoEspacio} ${localizacion.estilo ?? ""} ${localizacion.direccion} ${localizacion.municipio} ${localizacion.distritoBarrio ?? ""}`,
-    );
+  const filtradas = useMemo(
+    () => localizacionesCatalogo.filter((localizacion) => {
+      const texto = normalizar(
+        `${localizacion.nombre} ${localizacion.tipoEspacio} ${localizacion.estilo ?? ""} ${localizacion.direccion} ${localizacion.municipio} ${localizacion.distritoBarrio ?? ""}`,
+      );
 
-    return (
-      (!termino || texto.includes(termino)) &&
-      (!filtroProduccion ||
-        filtroProduccion.terminos.some((palabra) => texto.includes(normalizar(palabra)))) &&
-      (!soloZbedep || localizacion.esZbedepCentro) &&
-      (!soloBase || localizacion.espacioBaseProd) &&
-      (proyectoActivoId === "todos" || localizacion.asignaciones.some((asignacion) => asignacion.proyectoId === proyectoActivoId)) &&
-      (minimoKw === null || (localizacion.potenciaElectricaKw ?? 0) >= minimoKw)
-    );
-  });
-
-  const localizacionActiva = localizacionesCatalogo.find(
-    (localizacion) => localizacion.id === localizacionActivaId,
+      return (
+        ambitoBusqueda !== "internet" &&
+        (!termino || texto.includes(termino)) &&
+        (!filtroProduccion ||
+          filtroProduccion.terminos.some((palabra) => texto.includes(normalizar(palabra)))) &&
+        (!soloZbedep || localizacion.esZbedepCentro) &&
+        (!soloBase || localizacion.espacioBaseProd) &&
+        (proyectoActivoId === "todos" ||
+          localizacion.asignaciones.some((asignacion) => asignacion.proyectoId === proyectoActivoId)) &&
+        (minimoKw === null || (localizacion.potenciaElectricaKw ?? 0) >= minimoKw)
+      );
+    }),
+    [
+      ambitoBusqueda,
+      filtroProduccion,
+      localizacionesCatalogo,
+      minimoKw,
+      proyectoActivoId,
+      soloBase,
+      soloZbedep,
+      termino,
+    ],
   );
-  const enCentro = localizacionesCatalogo.filter((localizacion) => localizacion.esZbedepCentro).length;
-  const conBase = localizacionesCatalogo.filter((localizacion) => localizacion.espacioBaseProd).length;
+
+  const localizacionActiva = useMemo(
+    () => localizacionesCatalogo.find((localizacion) => localizacion.id === localizacionActivaId),
+    [localizacionesCatalogo, localizacionActivaId],
+  );
+  const enCentro = useMemo(
+    () => localizacionesCatalogo.filter((localizacion) => localizacion.esZbedepCentro).length,
+    [localizacionesCatalogo],
+  );
+  const conBase = useMemo(
+    () => localizacionesCatalogo.filter((localizacion) => localizacion.espacioBaseProd).length,
+    [localizacionesCatalogo],
+  );
+  const elementosMapa = useMemo(
+    () => filtradas.map((localizacion) => ({
+      id: localizacion.id,
+      nombre: localizacion.nombre,
+      latitud: localizacion.latitud,
+      longitud: localizacion.longitud,
+      esZbedepCentro: localizacion.esZbedepCentro,
+      esZbe: localizacion.esZbe,
+      distritoBarrio: localizacion.distritoBarrio,
+      tipoEspacio: localizacion.tipoEspacio,
+      estadoProyecto: localizacion.asignaciones.find(
+        (asignacion) => asignacion.proyectoId === proyectoActivoId,
+      )?.estado ?? null,
+    })),
+    [filtradas, proyectoActivoId],
+  );
 
   useEffect(() => {
-    if (!localizacionActivaId) return;
-    document.getElementById(`localizacion-${localizacionActivaId}`)?.scrollIntoView({
+    if (!localizacionEnfocadaId) return;
+    document.getElementById(`localizacion-${localizacionEnfocadaId}`)?.scrollIntoView({
       block: "nearest",
       behavior: "smooth",
     });
-  }, [localizacionActivaId]);
+  }, [localizacionEnfocadaId, solicitudFocoMapa]);
+
+  useEffect(() => {
+    if (!localizacionResaltadaId) return;
+    const timer = window.setTimeout(() => setLocalizacionResaltadaId(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [localizacionResaltadaId]);
+
+  useEffect(() => {
+    if (!dossierLocalizaciones) return;
+    let cancelado = false;
+    const cerrarDossier = () => setDossierLocalizaciones(null);
+    window.addEventListener("afterprint", cerrarDossier);
+
+    void Promise.all(
+      Array.from(
+        document.querySelectorAll<HTMLImageElement>(".locamad-dossier-print img"),
+      ).map((imagen) => imagen.decode().catch(() => undefined)),
+    ).then(() => {
+      if (!cancelado) window.print();
+    });
+
+    return () => {
+      cancelado = true;
+      window.removeEventListener("afterprint", cerrarDossier);
+    };
+  }, [dossierLocalizaciones]);
 
   useEffect(() => {
     if (!localizacionActiva && !modalNuevaLocalizacion && !modalNuevoProyecto) return;
@@ -526,7 +600,7 @@ export default function ExploradorLocalizaciones({
             <p className="mt-1 text-[10px] font-medium uppercase tracking-[0.14em] text-[#747b72]">Localizaciones de rodaje</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 sm:gap-4">
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-2 overflow-x-auto sm:gap-4">
           <label className="flex h-9 max-w-[190px] items-center border border-[#dfe3db] bg-white px-2.5 text-[11px] font-medium text-[#687166] sm:text-xs">
             <span className="sr-only">Proyecto activo</span>
             <select
@@ -553,6 +627,20 @@ export default function ExploradorLocalizaciones({
             type="button"
           >
             <Download size={15} /> Descargar CSV
+          </button>
+          <button
+            className="flex h-9 max-w-[260px] shrink-0 items-center gap-1.5 bg-[#315d48] px-3 text-left text-[10px] font-semibold leading-tight text-white transition-colors hover:bg-[#244b39] disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:text-xs"
+            disabled={localizacionesSeleccionadas.length === 0}
+            onClick={() => {
+              const seleccionadas = localizacionesCatalogo.filter((localizacion) =>
+                localizacionesSeleccionadas.includes(localizacion.id),
+              );
+              if (seleccionadas.length > 0) setDossierLocalizaciones(seleccionadas);
+            }}
+            type="button"
+          >
+            <Printer size={14} />
+            <span>Generar Dossier de Scouting ({localizacionesSeleccionadas.length} seleccionadas)</span>
           </button>
           {puedeGestionar && (
             <button
@@ -599,15 +687,18 @@ export default function ExploradorLocalizaciones({
       </header>
 
       <main className="mx-auto grid min-h-[calc(100vh-68px)] max-w-[1800px] grid-cols-1 lg:grid-cols-[minmax(400px,0.82fr)_minmax(0,1.18fr)]">
-        <section className="flex min-h-[560px] flex-col border-r border-[#dfe2db] bg-[#f8f9f6] lg:h-[calc(100vh-68px)]">
-          <div className="border-b border-[#e3e6df] px-5 pb-4 pt-6 sm:px-7">
+        <section className="flex min-h-[560px] flex-col border-r border-[#dfe2db] bg-[#f8f9f6] lg:h-[calc(100vh-68px)] lg:min-h-0 lg:overflow-hidden">
+          <div className="shrink-0 border-b border-[#e3e6df] px-5 pb-4 pt-6 sm:px-7 lg:max-h-[64vh] lg:overflow-y-auto">
             <div className="flex items-end justify-between gap-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#728071]">Explorador · Madrid</p>
                 <h1 className="mt-2 text-[26px] font-semibold leading-tight">Localizaciones</h1>
               </div>
               <span className="pb-1 font-mono text-sm text-[#71786f]">
-                {String(filtradas.length).padStart(2, "0")} / {String(localizacionesCatalogo.length).padStart(2, "0")}
+                {ambitoBusqueda === "internet"
+                  ? String(resultadosInternet.length).padStart(2, "0")
+                  : String(filtradas.length).padStart(2, "0")}{" "}
+                / {String(ambitoBusqueda === "internet" ? resultadosInternet.length : localizacionesCatalogo.length).padStart(2, "0")}
               </span>
             </div>
 
@@ -626,10 +717,9 @@ export default function ExploradorLocalizaciones({
               </div>
             </div>
 
-            <form
+            <div
               aria-label="Buscador global de localizaciones"
               className="mt-4 border border-[#dfe3db] bg-white p-3.5"
-              onSubmit={buscarGlobalmente}
             >
               <label className="flex h-10 items-center gap-2.5 border border-[#dfe3db] bg-[#fbfcfa] px-3 text-[#7b8179] focus-within:border-[#718a72]">
                 <Search aria-hidden="true" size={16} />
@@ -638,12 +728,13 @@ export default function ExploradorLocalizaciones({
                   className="h-full min-w-0 flex-1 bg-transparent text-sm text-[#20251f] outline-none placeholder:text-[#92988f]"
                   maxLength={120}
                   onChange={(event) => {
-                    setBusquedaGlobal(event.target.value);
-                    setBusquedaEjecutada(false);
+                    setBusqueda(event.target.value);
+                    setFiltroProduccionActivo(null);
+                    setLocalizacionActivaId(null);
                   }}
                   placeholder="Busca un lugar, negocio o categoría..."
                   type="search"
-                  value={busquedaGlobal}
+                  value={busqueda}
                 />
               </label>
 
@@ -657,20 +748,19 @@ export default function ExploradorLocalizaciones({
                     maxLength={100}
                     onChange={(event) => {
                       setZonaBusqueda(event.target.value);
-                      setBusquedaEjecutada(false);
                     }}
                     placeholder="Zona"
                     value={zonaBusqueda}
                   />
                 </label>
-                <button
-                  className="flex h-9 shrink-0 items-center justify-center gap-1.5 bg-[#183d32] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#285746] disabled:cursor-wait disabled:opacity-70"
-                  disabled={buscando || !busquedaGlobal.trim()}
-                  type="submit"
-                >
-                  {buscando ? <LoaderCircle className="animate-spin" size={14} /> : <Search size={14} />}
-                  Buscar
-                </button>
+                <span aria-live="polite" className="flex h-9 shrink-0 items-center gap-1.5 px-2 text-[11px] text-[#687166]">
+                  {buscando && <LoaderCircle className="animate-spin" size={13} />}
+                  {ambitoBusqueda === "todo"
+                    ? "Catálogo + internet"
+                    : ambitoBusqueda === "internet"
+                      ? "Internet"
+                      : "Catálogo"}
+                </span>
               </div>
 
               <fieldset className="mt-3">
@@ -688,11 +778,9 @@ export default function ExploradorLocalizaciones({
                           ? "bg-[#e8f0e9] text-[#315d48]"
                           : "bg-white text-[#667064] hover:bg-[#f5f6f3]"
                       }`}
-                      disabled={buscando}
                       key={ambito}
                       onClick={() => {
                         setAmbitoBusqueda(ambito);
-                        setBusquedaEjecutada(false);
                       }}
                       type="button"
                     >
@@ -701,159 +789,7 @@ export default function ExploradorLocalizaciones({
                   ))}
                 </div>
               </fieldset>
-            </form>
-
-            {busquedaEjecutada && (
-              <div
-                aria-live="polite"
-                className="mt-3 max-h-[340px] space-y-3 overflow-y-auto border border-[#e1e4dc] bg-white p-3"
-              >
-                {buscando && (
-                  <p className="flex items-center gap-2 text-xs text-[#687166]" role="status">
-                    <LoaderCircle className="animate-spin" size={14} /> Buscando coincidencias...
-                  </p>
-                )}
-
-                {(ambitoBusqueda !== "internet" || resultadosCatalogo.length > 0) && (
-                  <section aria-labelledby="resultados-catalogo-titulo">
-                    <h2
-                      className="text-xs font-bold text-[#315d48]"
-                      id="resultados-catalogo-titulo"
-                    >
-                      📍 En tu catálogo
-                    </h2>
-                    {errorCatalogo ? (
-                      <p className="mt-2 text-xs text-[#a33c32]" role="alert">{errorCatalogo}</p>
-                    ) : !buscando && resultadosCatalogo.length === 0 ? (
-                      <p className="mt-2 text-xs text-[#747b72]">No hay coincidencias en tu catálogo.</p>
-                    ) : (
-                      <ul className="mt-2 space-y-2">
-                        {resultadosCatalogo.map((resultado) => (
-                          <li
-                            className="flex items-center justify-between gap-2 border-t border-[#edf0e9] pt-2"
-                            key={resultado.id}
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-semibold text-[#30382f]">{resultado.nombre}</p>
-                              <p className="truncate text-[11px] text-[#747b72]">
-                                {resultado.tipoEspacio}
-                                {resultado.estilo ? ` · ${resultado.estilo}` : ""} · {resultado.direccion}
-                              </p>
-                            </div>
-                            <button
-                              className="shrink-0 text-[11px] font-semibold text-[#315d48] underline underline-offset-2"
-                              onClick={() => seleccionarLocalizacion(resultado.id)}
-                              type="button"
-                            >
-                              Abrir ficha
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                )}
-
-                {ambitoBusqueda !== "catalogo" && (
-                  <section aria-labelledby="resultados-internet-titulo">
-                    <h2
-                      className="text-xs font-bold text-[#315d48]"
-                      id="resultados-internet-titulo"
-                    >
-                      🌐 Opciones en internet
-                    </h2>
-                    {errorInternet ? (
-                      <p className="mt-2 text-xs text-[#a33c32]" role="alert">{errorInternet}</p>
-                    ) : !buscando && resultadosInternet.length === 0 ? (
-                      <p className="mt-2 text-xs text-[#747b72]">No hay lugares encontrados en internet.</p>
-                    ) : (
-                      <ul className="mt-2 space-y-2">
-                        {resultadosInternet.map((lugar) => {
-                          const añadido = idsAñadidos.includes(lugar.id);
-                          const guardando = idsGuardando.includes(lugar.id);
-                          const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lugar.lat},${lugar.lng}`;
-                          return (
-                            <li className="border-t border-[#edf0e9] pt-2" key={lugar.id}>
-                              <p className="text-xs font-semibold text-[#30382f]">{lugar.nombre}</p>
-                              <p className="mt-0.5 text-[11px] leading-4 text-[#747b72]">{lugar.direccion}</p>
-                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                                <a
-                                  className="inline-flex items-center gap-1 text-[11px] font-medium text-[#315d48] underline underline-offset-2"
-                                  href={mapsUrl}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                >
-                                  <ExternalLink size={12} /> Ver en Maps
-                                </a>
-                                <button
-                                  aria-live="polite"
-                                  className={`inline-flex h-8 items-center gap-1.5 border px-2.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${
-                                    añadido
-                                      ? "border-[#b8d2bf] bg-[#edf5ee] text-[#285c3e]"
-                                      : "border-[#315d48] bg-[#315d48] text-white hover:bg-[#244b39]"
-                                  } disabled:opacity-70`}
-                                  disabled={!puedeGestionar || añadido || guardando}
-                                  onClick={() => void añadirAlCatalogo(lugar)}
-                                  title={
-                                    puedeGestionar
-                                      ? undefined
-                                      : "Inicia sesión con un rol autorizado para añadir localizaciones."
-                                  }
-                                  type="button"
-                                >
-                                  {guardando ? (
-                                    <LoaderCircle className="animate-spin" size={13} />
-                                  ) : añadido ? (
-                                    <Check size={13} />
-                                  ) : (
-                                    <Plus size={13} />
-                                  )}
-                                  {guardando
-                                    ? "Guardando..."
-                                    : añadido
-                                      ? "En tu catálogo"
-                                      : "Añadir a mi catálogo"}
-                                </button>
-                              </div>
-                              {erroresGuardado[lugar.id] && (
-                                <p className="mt-1 text-[11px] text-[#a33c32]" role="alert">
-                                  {erroresGuardado[lugar.id]}
-                                </p>
-                              )}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                    <a
-                      className="mt-2 inline-flex items-center gap-1 text-[10px] text-[#858b82] underline underline-offset-2"
-                      href="https://www.openstreetmap.org/copyright"
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      <Globe2 size={11} /> Datos © OpenStreetMap contributors
-                    </a>
-                  </section>
-                )}
-              </div>
-            )}
-
-            <label className="mt-4 flex h-10 items-center gap-2.5 border border-[#dfe3db] bg-white px-3 text-[#7b8179] focus-within:border-[#718a72]">
-              <Search size={16} />
-              <input
-                aria-label="Buscar por nombre, calle o barrio"
-                className="h-full min-w-0 flex-1 bg-transparent text-sm text-[#20251f] outline-none placeholder:text-[#92988f]"
-                onChange={(event) => {
-                  setBusqueda(event.target.value);
-                  setFiltroProduccionActivo(null);
-                  setLocalizacionActivaId(null);
-                }}
-                placeholder="Nombre, calle o barrio..."
-                type="search"
-                value={busqueda}
-              />
-              <SlidersHorizontal size={15} aria-hidden="true" />
-            </label>
+            </div>
 
             <div className="mt-3">
               <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.12em] text-[#788276]">
@@ -926,8 +862,88 @@ export default function ExploradorLocalizaciones({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
-            {filtradas.length === 0 ? (
+          <div aria-label="Resultados de localizaciones" className="min-h-[240px] max-h-[calc(100vh-380px)] flex-1 overflow-y-auto px-4 py-4 sm:px-5 lg:min-h-0 lg:max-h-none">
+            {ambitoBusqueda !== "catalogo" && busqueda.trim() && (
+              <section aria-labelledby="resultados-internet-titulo" className="mb-3 border border-[#dfe3db] bg-white p-3">
+                <h2 className="text-xs font-bold text-[#315d48]" id="resultados-internet-titulo">
+                  Opciones en internet
+                </h2>
+                {buscando && (
+                  <p className="mt-2 flex items-center gap-2 text-xs text-[#687166]" role="status">
+                    <LoaderCircle className="animate-spin" size={14} /> Buscando en internet...
+                  </p>
+                )}
+                {errorInternet && <p className="mt-2 text-xs text-[#a33c32]" role="alert">{errorInternet}</p>}
+                {!buscando && !errorInternet && resultadosInternet.length === 0 && (
+                  <p className="mt-2 text-xs text-[#747b72]">No hay lugares encontrados en internet.</p>
+                )}
+                {resultadosInternet.length > 0 && (
+                  <ul className="mt-2 space-y-2">
+                    {resultadosInternet.map((lugar) => {
+                      const añadido = idsAñadidos.includes(lugar.id);
+                      const guardando = idsGuardando.includes(lugar.id);
+                      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lugar.lat},${lugar.lng}`;
+                      return (
+                        <li className="border-t border-[#edf0e9] pt-2" key={lugar.id}>
+                          <p className="text-xs font-semibold text-[#30382f]">{lugar.nombre}</p>
+                          <p className="mt-0.5 text-[11px] leading-4 text-[#747b72]">{lugar.direccion}</p>
+                          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <a
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#315d48] underline underline-offset-2"
+                              href={mapsUrl}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              <ExternalLink size={12} /> Ver en Maps
+                            </a>
+                            <button
+                              aria-live="polite"
+                              className={`inline-flex h-8 items-center gap-1.5 border px-2.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${
+                                añadido
+                                  ? "border-[#b8d2bf] bg-[#edf5ee] text-[#285c3e]"
+                                  : "border-[#315d48] bg-[#315d48] text-white hover:bg-[#244b39]"
+                              } disabled:opacity-70`}
+                              disabled={!puedeGestionar || añadido || guardando}
+                              onClick={() => void añadirAlCatalogo(lugar)}
+                              title={puedeGestionar
+                                ? undefined
+                                : "Inicia sesión con un rol autorizado para añadir localizaciones."}
+                              type="button"
+                            >
+                              {guardando ? <LoaderCircle className="animate-spin" size={13} /> : añadido ? <Check size={13} /> : <Plus size={13} />}
+                              {guardando ? "Guardando..." : añadido ? "En tu catálogo" : "Añadir a mi catálogo"}
+                            </button>
+                          </div>
+                          {erroresGuardado[lugar.id] && (
+                            <p className="mt-1 text-[11px] text-[#a33c32]" role="alert">
+                              {erroresGuardado[lugar.id]}
+                            </p>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                <a
+                  className="mt-2 inline-flex items-center gap-1 text-[10px] text-[#858b82] underline underline-offset-2"
+                  href="https://www.openstreetmap.org/copyright"
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <Globe2 size={11} /> Datos © OpenStreetMap contributors
+                </a>
+              </section>
+            )}
+
+            {ambitoBusqueda === "internet" && !busqueda.trim() && (
+              <div className="grid min-h-48 place-items-center border border-dashed border-[#cfd5cb] bg-white p-8 text-center">
+                <p className="text-sm text-[#7b8179]">Escribe en el buscador para ver lugares en internet.</p>
+              </div>
+            )}
+
+            {ambitoBusqueda !== "internet" && (
+              filtradas.length === 0 &&
+              (ambitoBusqueda === "catalogo" || (!buscando && resultadosInternet.length === 0)) ? (
               <div className="grid min-h-48 place-items-center border border-dashed border-[#cfd5cb] bg-white p-8 text-center">
                 <div>
                   <MapPin className="mx-auto text-[#8b9788]" size={22} />
@@ -941,6 +957,7 @@ export default function ExploradorLocalizaciones({
                       setSoloBase(false);
                       setPotenciaMinima("");
                       setProyectoActivoId("todos");
+                      setFiltroProduccionActivo(null);
                       setLocalizacionActivaId(null);
                     }}
                     type="button"
@@ -963,11 +980,15 @@ export default function ExploradorLocalizaciones({
                       className={`group block w-full cursor-pointer border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1769aa] ${
                         activa
                           ? "border-[#315d48] bg-[#f0f5ef] ring-1 ring-[#315d48]"
-                          : "border-[#e1e4dd] bg-white hover:border-[#9eac9d]"
+                          : localizacionResaltadaId === localizacion.id
+                            ? "animate-pulse border-[#b65337] bg-[#fff7f2] ring-2 ring-[#b65337]"
+                            : "border-[#e1e4dd] bg-white hover:border-[#9eac9d]"
                       }`}
                       id={`localizacion-${localizacion.id}`}
                       key={localizacion.id}
                       onClick={() => seleccionarLocalizacion(localizacion.id)}
+                      onMouseEnter={() => enfocarLocalizacion(localizacion.id)}
+                      onFocus={() => enfocarLocalizacion(localizacion.id)}
                       onKeyDown={(event) => {
                         if (
                           event.target === event.currentTarget &&
@@ -981,6 +1002,20 @@ export default function ExploradorLocalizaciones({
                     >
                       <span className="flex items-start justify-between gap-3">
                         <span className="flex min-w-0 gap-3">
+                          <input
+                            aria-label={`Añadir ${localizacion.nombre} al dossier`}
+                            checked={localizacionesSeleccionadas.includes(localizacion.id)}
+                            className="mt-2 size-4 shrink-0 accent-[#315d48]"
+                            onChange={(event) => {
+                              setLocalizacionesSeleccionadas((seleccionadas) =>
+                                event.target.checked
+                                  ? [...seleccionadas, localizacion.id]
+                                  : seleccionadas.filter((id) => id !== localizacion.id),
+                              );
+                            }}
+                            onClick={(event) => event.stopPropagation()}
+                            type="checkbox"
+                          />
                           <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-[#edf1ea] font-mono text-[11px] font-semibold text-[#4c654b]">
                             {String(index + 1).padStart(2, "0")}
                           </span>
@@ -1028,6 +1063,10 @@ export default function ExploradorLocalizaciones({
                         )}
                         <button
                           className="ml-auto flex h-8 items-center gap-2 bg-[#1769aa] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#12558b]"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            seleccionarLocalizacion(localizacion.id);
+                          }}
                           type="button"
                         >
                           Ver detalles <ArrowUpRight size={14} />
@@ -1037,7 +1076,7 @@ export default function ExploradorLocalizaciones({
                   );
                 })}
               </div>
-            )}
+            ))}
           </div>
 
           <footer className="flex items-center justify-between border-t border-[#e1e4dd] px-5 py-3 text-[10px] text-[#828880] sm:px-7">
@@ -1055,21 +1094,12 @@ export default function ExploradorLocalizaciones({
           </div>
           <MapaLocalizacionesCliente
             activeId={localizacionActivaId}
+            focusedId={localizacionEnfocadaId}
             focusRequest={solicitudFocoMapa}
-            items={filtradas.map((localizacion) => ({
-              id: localizacion.id,
-              nombre: localizacion.nombre,
-              latitud: localizacion.latitud,
-              longitud: localizacion.longitud,
-              esZbedepCentro: localizacion.esZbedepCentro,
-              esZbe: localizacion.esZbe,
-              distritoBarrio: localizacion.distritoBarrio,
-              tipoEspacio: localizacion.tipoEspacio,
-              estadoProyecto: localizacion.asignaciones.find(
-                (asignacion) => asignacion.proyectoId === proyectoActivoId,
-              )?.estado ?? null,
-            }))}
+            items={elementosMapa}
             onSelect={seleccionarLocalizacion}
+            onFocus={enfocarLocalizacion}
+            onPinSelect={seleccionarPinMapa}
           />
         </section>
       </main>
@@ -1125,6 +1155,10 @@ export default function ExploradorLocalizaciones({
               </div>
             </div>
 
+            <div className="px-5 pt-5 sm:px-7">
+              <CarruselFotos fotos={localizacionActiva.fotos} nombre={localizacionActiva.nombre} />
+            </div>
+
             <div className="space-y-5 px-5 py-5 sm:px-7">
               <section>
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Espacio</h3>
@@ -1143,7 +1177,12 @@ export default function ExploradorLocalizaciones({
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Logística y accesos</h3>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
                   <Detail icon={<Zap size={14} />} label="Potencia eléctrica" value={localizacionActiva.potenciaElectricaKw != null ? `${localizacionActiva.potenciaElectricaKw} kW` : null} />
-                  <Detail icon={<Truck size={14} />} label="Gálibo camiones" value={localizacionActiva.galiboCamionesM != null ? `${localizacionActiva.galiboCamionesM} m` : null} />
+                  <Detail
+                    icon={<Route size={14} />}
+                    label="Acceso de camiones / gálibo"
+                    value={localizacionActiva.galiboCamionesM != null ? `Gálibo registrado: ${localizacionActiva.galiboCamionesM} m` : null}
+                  />
+                  <Detail label="Grupo electrógeno" value="Acceso por verificar en visita técnica" />
                   <Detail icon={<Droplets size={14} />} label="Toma de agua" value={localizacionActiva.tomaAgua ? "Disponible" : "No disponible"} />
                   <Detail icon={<Check size={14} />} label="Aseos" value={localizacionActiva.aseosDisponibles ? "Disponibles" : "No disponibles"} />
                   <Detail icon={<Building2 size={14} />} label="Base de producción" value={localizacionActiva.espacioBaseProd ? "Disponible" : "No disponible"} />
@@ -1158,17 +1197,7 @@ export default function ExploradorLocalizaciones({
                   <Detail
                     icon={<Compass size={14} />}
                     label="Azimut solar aprox. ahora"
-                    value={(() => {
-                      const posicion = SunCalc.getPosition(
-                        new Date(),
-                        localizacionActiva.latitud,
-                        localizacionActiva.longitud,
-                      );
-                      const azimut = (posicion.azimuth * 180 / Math.PI + 360) % 360;
-                      const cardinales = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
-                      const cardinal = cardinales[Math.round(azimut / 45) % cardinales.length];
-                      return `${azimut.toFixed(0)}° (${cardinal})`;
-                    })()}
+                    value={obtenerAzimutSolar(localizacionActiva.latitud, localizacionActiva.longitud)}
                   />
                   <Detail icon={<Volume2 size={14} />} label="Nivel de ruido" value={localizacionActiva.nivelRuidoDb != null ? `${localizacionActiva.nivelRuidoDb} dB` : null} />
                 </dl>
@@ -1176,6 +1205,14 @@ export default function ExploradorLocalizaciones({
                   Azimut solar aproximado para la hora actual; no representa la orientación medida de la fachada.
                 </p>
                 <div className="locamad-no-print mt-3 flex flex-wrap gap-2">
+                  <a
+                    className="inline-flex h-8 items-center gap-1.5 border border-[#dfe3db] bg-white px-2.5 text-[11px] font-semibold text-[#315d48] hover:bg-[#f5f6f3]"
+                    href={`https://www.sunsurveyor.com/?latitude=${localizacionActiva.latitud}&longitude=${localizacionActiva.longitud}`}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLink size={12} /> Sun Surveyor
+                  </a>
                   <a
                     className="inline-flex h-8 items-center gap-1.5 border border-[#dfe3db] bg-white px-2.5 text-[11px] font-semibold text-[#315d48] hover:bg-[#f5f6f3]"
                     href={`https://app.photoephemeris.com/?ll=${localizacionActiva.latitud},${localizacionActiva.longitud}`}
@@ -1193,6 +1230,51 @@ export default function ExploradorLocalizaciones({
                     <ExternalLink size={12} /> Google Maps 3D
                   </a>
                 </div>
+              </section>
+
+              <section className="border-t border-[#e1e4dd] pt-5">
+                <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">
+                  Permisos y gestión
+                </h3>
+                {localizacionActiva.permisos.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {localizacionActiva.permisos.map((permiso) => (
+                      <article className="border border-[#e1e4dd] bg-white p-3" key={permiso.id}>
+                        <p className="text-xs font-semibold">{permiso.tipo.replaceAll("_", " ")}</p>
+                        <p className="mt-1 text-[11px] text-[#737a71]">
+                          {permiso.organismo} · {permiso.estado.replaceAll("_", " ")}
+                          {permiso.numeroRegistro ? ` · ${permiso.numeroRegistro}` : ""}
+                        </p>
+                        <p className="mt-1 text-[11px] text-[#737a71]">
+                          Rodaje: {new Date(permiso.fechaRodajeInicio).toLocaleDateString("es-ES")} – {new Date(permiso.fechaRodajeFin).toLocaleDateString("es-ES")}
+                        </p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-[#737a71]">No hay permisos registrados para esta localización.</p>
+                )}
+                {localizacionActiva.asignaciones.some((asignacion) => asignacion.notasProduccion) ||
+                localizacionActiva.contactos.some((contacto) => contacto.notasTrato) ? (
+                  <div className="mt-3 space-y-2">
+                    {localizacionActiva.asignaciones
+                      .filter((asignacion) => asignacion.notasProduccion)
+                      .map((asignacion) => (
+                        <p className="border-l-2 border-[#b88b43] bg-[#faf8f0] px-3 py-2 text-xs leading-5 text-[#5f6258]" key={asignacion.id}>
+                          {asignacion.notasProduccion}
+                        </p>
+                      ))}
+                    {localizacionActiva.contactos
+                      .filter((contacto) => contacto.notasTrato)
+                      .map((contacto) => (
+                        <p className="border-l-2 border-[#b88b43] bg-[#faf8f0] px-3 py-2 text-xs leading-5 text-[#5f6258]" key={contacto.id}>
+                          {contacto.notasTrato}
+                        </p>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-[#737a71]">Sin notas de permisos o producción.</p>
+                )}
               </section>
 
               <section className="border-t border-[#e1e4dd] pt-5">
@@ -1306,6 +1388,9 @@ export default function ExploradorLocalizaciones({
             <X size={15} />
           </button>
         </div>
+      )}
+      {dossierLocalizaciones && (
+        <DossierScouting localizaciones={dossierLocalizaciones} />
       )}
     </div>
   );
@@ -1438,5 +1523,161 @@ function Detail({
       </dt>
       <dd className="mt-1 break-words text-xs font-medium leading-5 text-[#31382f]">{value ?? "No especificado"}</dd>
     </div>
+  );
+}
+
+function CarruselFotos({ fotos, nombre }: { fotos: string[]; nombre: string }) {
+  const [indice, setIndice] = useState(0);
+
+  if (fotos.length === 0) {
+    return (
+      <div className="grid aspect-[16/8] place-items-center border border-dashed border-[#cfd5cb] bg-white text-xs text-[#7b8179]">
+        No hay fotografías registradas
+      </div>
+    );
+  }
+
+  const indiceVisible = indice % fotos.length;
+
+  return (
+    <figure className="relative overflow-hidden border border-[#dfe3db] bg-white">
+      <Image
+        alt={`${nombre}, fotografía ${indiceVisible + 1}`}
+        className="aspect-[16/8] w-full object-cover"
+        height={800}
+        loading="eager"
+        unoptimized
+        src={fotos[indiceVisible]}
+        width={1600}
+      />
+      {fotos.length > 1 && (
+        <>
+          <button
+            aria-label="Fotografía anterior"
+            className="absolute left-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[#315d48] shadow"
+            onClick={() => setIndice((actual) => (actual - 1 + fotos.length) % fotos.length)}
+            type="button"
+          >
+            ‹
+          </button>
+          <button
+            aria-label="Fotografía siguiente"
+            className="absolute right-2 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-[#315d48] shadow"
+            onClick={() => setIndice((actual) => (actual + 1) % fotos.length)}
+            type="button"
+          >
+            ›
+          </button>
+          <figcaption className="absolute bottom-2 right-2 bg-[#17201b]/75 px-2 py-1 text-[10px] text-white">
+            {indiceVisible + 1} / {fotos.length}
+          </figcaption>
+        </>
+      )}
+    </figure>
+  );
+}
+
+function DossierScouting({ localizaciones }: { localizaciones: Localizacion[] }) {
+  const generado = new Date().toLocaleDateString("es-ES", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  return (
+    <main aria-hidden="true" className="locamad-dossier-print">
+      <section className="locamad-dossier-cover">
+        <div className="locamad-dossier-brand">LOCAMAD</div>
+        <p className="locamad-dossier-kicker">Producción audiovisual · Madrid</p>
+        <h1>Dossier de scouting</h1>
+        <p className="locamad-dossier-subtitle">Selección de localizaciones para dirección y producción</p>
+        <div className="locamad-dossier-cover-rule" />
+        <p><strong>{localizaciones.length}</strong> {localizaciones.length === 1 ? "localización seleccionada" : "localizaciones seleccionadas"}</p>
+        <p>Generado el {generado}</p>
+        <footer>LocaMad · Fichas técnicas y datos para scouting</footer>
+      </section>
+
+      {localizaciones.map((localizacion, indice) => (
+        <article className="locamad-dossier-location" key={localizacion.id}>
+          <header className="locamad-dossier-header">
+            <strong>LOCAMAD</strong>
+            <span>FICHA DE SCOUTING · {String(indice + 1).padStart(2, "0")}</span>
+          </header>
+          <h2>{localizacion.nombre}</h2>
+          <p className="locamad-dossier-address">
+            {localizacion.direccion}, {localizacion.distritoBarrio || localizacion.municipio}
+          </p>
+          <p className="locamad-dossier-type">
+            {localizacion.tipoEspacio}{localizacion.estilo ? ` · ${localizacion.estilo}` : ""}
+          </p>
+
+          {localizacion.fotos.length > 0 ? (
+            <div className="locamad-dossier-photos">
+              {localizacion.fotos.slice(0, 4).map((foto, fotoIndice) => (
+                <Image
+                  alt={`${localizacion.nombre}, fotografía ${fotoIndice + 1}`}
+                  height={800}
+                  key={`${foto}-${fotoIndice}`}
+                  loading="eager"
+                  src={foto}
+                  unoptimized
+                  width={1200}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="locamad-dossier-no-photo">Sin fotografías disponibles</div>
+          )}
+
+          <h3>Ficha logística</h3>
+          <dl className="locamad-dossier-grid">
+            <div><dt>Municipio</dt><dd>{localizacion.municipio}</dd></div>
+            <div><dt>Distrito / barrio</dt><dd>{localizacion.distritoBarrio || "No especificado"}</dd></div>
+            <div><dt>Coordenadas</dt><dd>{localizacion.latitud.toFixed(5)}, {localizacion.longitud.toFixed(5)}</dd></div>
+            <div><dt>Potencia eléctrica</dt><dd>{localizacion.potenciaElectricaKw != null ? `${localizacion.potenciaElectricaKw} kW` : "No especificada"}</dd></div>
+            <div><dt>Gálibo de camiones</dt><dd>{localizacion.galiboCamionesM != null ? `${localizacion.galiboCamionesM} m` : "No especificado"}</dd></div>
+            <div><dt>Grupo electrógeno</dt><dd>Acceso por verificar en visita</dd></div>
+            <div><dt>ZBEDEP / Distrito Centro</dt><dd>{localizacion.esZbedepCentro ? "Sí" : "No"}</dd></div>
+            <div><dt>Base de producción</dt><dd>{localizacion.espacioBaseProd ? "Disponible" : "No disponible"}</dd></div>
+            <div><dt>Orientación solar</dt><dd>{localizacion.orientacionLuz || "No especificada"}</dd></div>
+            <div><dt>Azimut solar aprox. ahora</dt><dd>{obtenerAzimutSolar(localizacion.latitud, localizacion.longitud)}</dd></div>
+          </dl>
+
+          <h3>Permisos y notas de producción</h3>
+          {localizacion.permisos.length > 0 ? (
+            <ul className="locamad-dossier-notes">
+              {localizacion.permisos.map((permiso) => (
+                <li key={permiso.id}>
+                  {permiso.tipo.replaceAll("_", " ")} · {permiso.organismo} · {permiso.estado.replaceAll("_", " ")}
+                  {permiso.numeroRegistro ? ` · ${permiso.numeroRegistro}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="locamad-dossier-muted">Sin permisos registrados.</p>
+          )}
+          {localizacion.asignaciones.filter((asignacion) => asignacion.notasProduccion).map((asignacion) => (
+            <p className="locamad-dossier-note" key={asignacion.id}>{asignacion.notasProduccion}</p>
+          ))}
+          {localizacion.contactos.filter((contacto) => contacto.notasTrato).map((contacto) => (
+            <p className="locamad-dossier-note" key={contacto.id}>{contacto.notasTrato}</p>
+          ))}
+
+          <h3>Coordenadas y scouting solar</h3>
+          <div className="locamad-dossier-links">
+            <a href={`https://www.google.com/maps/search/?api=1&query=${localizacion.latitud},${localizacion.longitud}`}>
+              Abrir en Google Maps
+            </a>
+            <a href={`https://app.photoephemeris.com/?ll=${localizacion.latitud},${localizacion.longitud}`}>
+              The Photographer&apos;s Ephemeris
+            </a>
+            <a href={`https://www.sunsurveyor.com/?latitude=${localizacion.latitud}&longitude=${localizacion.longitud}`}>
+              Sun Surveyor
+            </a>
+          </div>
+          <footer className="locamad-dossier-footer">LocaMad · Documento de trabajo para producción</footer>
+        </article>
+      ))}
+    </main>
   );
 }

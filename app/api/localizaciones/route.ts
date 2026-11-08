@@ -25,6 +25,18 @@ const localizacionSelect = {
   esZbedepCentro: true,
   aparcamientoSer: true,
   fotos: true,
+  permisos: {
+    select: {
+      id: true,
+      tipo: true,
+      estado: true,
+      numeroRegistro: true,
+      organismo: true,
+      fechaSolicitud: true,
+      fechaRodajeInicio: true,
+      fechaRodajeFin: true,
+    },
+  },
   valoracion: true,
   estado: true,
   asignaciones: {

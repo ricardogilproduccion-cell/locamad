@@ -19,13 +19,19 @@ interface LocalizacionMapProps {
 export default function MapaLocalizaciones({
   items,
   activeId,
+  focusedId,
   focusRequest,
   onSelect,
+  onFocus,
+  onPinSelect,
 }: {
   items: LocalizacionMapProps[];
   activeId: string | null;
+  focusedId: string | null;
   focusRequest: number;
   onSelect: (id: string) => void;
+  onFocus: (id: string) => void;
+  onPinSelect: (id: string) => void;
 }) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -64,7 +70,7 @@ export default function MapaLocalizaciones({
       const marker = L.marker([loc.latitud, loc.longitud], {
         icon: L.divIcon({
           className: 'locamad-marker-icon',
-          html: `<span style="position:absolute;left:7px;top:3px;width:19px;height:19px;background:${loc.id === activeId ? '#b65337' : '#315d48'};border:2px solid white;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 5px #17201b66"></span>`,
+          html: `<span style="position:absolute;left:7px;top:3px;width:19px;height:19px;background:${loc.id === activeId || loc.id === focusedId ? '#b65337' : '#315d48'};border:2px solid white;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 5px #17201b66"></span>`,
           iconSize: [32, 38],
           iconAnchor: [16, 36],
           popupAnchor: [0, -32],
@@ -79,6 +85,15 @@ export default function MapaLocalizaciones({
       detail.style.cssText = 'margin:3px 0 0;font-size:11px;color:#64748b';
       detail.textContent = loc.distritoBarrio || loc.tipoEspacio;
       popup.append(title, detail);
+      const detailsButton = document.createElement('button');
+      detailsButton.type = 'button';
+      detailsButton.textContent = 'Ver ficha técnica';
+      detailsButton.style.cssText = 'display:block;margin-top:8px;padding:5px 8px;border:0;background:#315d48;color:white;font-size:11px;font-weight:600;cursor:pointer';
+      detailsButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        onSelect(loc.id);
+      });
+      popup.append(detailsButton);
 
       const zone = loc.esZbedepCentro ? 'ZBEDEP Centro' : loc.esZbe ? 'ZBE Madrid' : '';
       if (zone) {
@@ -110,19 +125,24 @@ export default function MapaLocalizaciones({
       }
 
       marker.bindPopup(popup);
-      marker.on('click', () => onSelect(loc.id));
+      marker.on('click', () => onPinSelect(loc.id));
+      marker.on('mouseover', () => onFocus(loc.id));
       markersRef.current.set(loc.id, marker);
     });
 
-    if (!activeId && items.length > 0) {
+    const itemEnfocado = items.find((item) => item.id === focusedId);
+    const itemActivo = items.find((item) => item.id === activeId);
+
+    if (!itemEnfocado && !itemActivo && items.length > 0) {
       map.fitBounds(
         L.latLngBounds(items.map((item) => [item.latitud, item.longitud])),
         { padding: [40, 40], maxZoom: 12 },
       );
     }
 
-    const activa = items.find((item) => item.id === activeId);
-    const marcadorActivo = activeId ? markersRef.current.get(activeId) : null;
+    const idEnfocado = itemEnfocado?.id ?? itemActivo?.id;
+    const activa = itemEnfocado ?? itemActivo;
+    const marcadorActivo = idEnfocado ? markersRef.current.get(idEnfocado) : null;
     if (activa && marcadorActivo) {
       map.flyTo([activa.latitud, activa.longitud], Math.max(map.getZoom(), 14), {
         animate: true,
@@ -130,7 +150,7 @@ export default function MapaLocalizaciones({
       });
       marcadorActivo.openPopup();
     }
-  }, [activeId, focusRequest, items, onSelect]);
+  }, [activeId, focusedId, focusRequest, items, onFocus, onPinSelect, onSelect]);
 
   return (
     <div

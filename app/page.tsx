@@ -51,6 +51,18 @@ async function CatalogoLocalizaciones() {
       esZbedepCentro: true,
       aparcamientoSer: true,
       fotos: true,
+      permisos: {
+        select: {
+          id: true,
+          tipo: true,
+          estado: true,
+          numeroRegistro: true,
+          organismo: true,
+          fechaSolicitud: true,
+          fechaRodajeInicio: true,
+          fechaRodajeFin: true,
+        },
+      },
       asignaciones: {
         select: {
           id: true,
