@@ -11,6 +11,7 @@ interface LocalizacionMapItem {
   esZbe: boolean;
   distritoBarrio: string | null;
   tipoEspacio: string;
+  fotoPortada?: string | null;
   estadoProyecto?: string | null;
 }
 

@@ -222,17 +222,52 @@ body {
     font-size: 8pt;
   }
 
+  .locamad-dossier-photo-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 3mm;
+    margin-top: 6mm;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .locamad-dossier-cover-photo {
+    position: relative;
+    margin: 0;
+  }
+
+  .locamad-dossier-cover-photo img {
+    display: block;
+    width: 100%;
+    height: 66mm;
+    object-fit: cover;
+    border: 1px solid #dfe3db;
+  }
+
+  .locamad-dossier-cover-photo figcaption {
+    position: absolute;
+    bottom: 1mm;
+    left: 1mm;
+    padding: 1.5mm 2mm;
+    color: #fff;
+    background: #183d32;
+    font-size: 7pt;
+    font-weight: 700;
+  }
+
   .locamad-dossier-photos {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 3mm;
-    margin-top: 6mm;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    grid-auto-flow: column;
+    gap: 2mm;
+    height: 66mm;
   }
 
-  .locamad-dossier-photos img,
-  .locamad-dossier-no-photo {
+  .locamad-dossier-photos img {
     width: 100%;
-    height: 55mm;
+    height: 100%;
+    min-height: 0;
     object-fit: cover;
     border: 1px solid #dfe3db;
   }
@@ -240,7 +275,10 @@ body {
   .locamad-dossier-no-photo {
     display: grid;
     place-items: center;
+    width: 100%;
+    height: 55mm;
     margin-top: 6mm;
+    border: 1px solid #dfe3db;
     color: #7b8179;
     font-size: 9pt;
   }

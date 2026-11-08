@@ -13,6 +13,7 @@ interface LocalizacionMapProps {
   esZbe: boolean;
   distritoBarrio?: string | null;
   tipoEspacio: string;
+  fotoPortada?: string | null;
   estadoProyecto?: string | null;
 }
 
@@ -79,6 +80,14 @@ export default function MapaLocalizaciones({
 
       const popup = document.createElement('div');
       popup.style.minWidth = '170px';
+      if (loc.fotoPortada) {
+        const cover = document.createElement('img');
+        cover.src = loc.fotoPortada;
+        cover.alt = `Foto de portada: ${loc.nombre}`;
+        cover.loading = 'lazy';
+        cover.style.cssText = 'display:block;width:100%;height:92px;margin-bottom:7px;object-fit:cover;border:1px solid #dfe3db';
+        popup.append(cover);
+      }
       const title = document.createElement('strong');
       title.textContent = loc.nombre;
       const detail = document.createElement('p');
@@ -105,6 +114,10 @@ export default function MapaLocalizaciones({
 
       if (loc.estadoProyecto) {
         const statusColors: Record<string, string> = {
+          EN_VALORACION: '#3d5d84',
+          PROPUESTA: '#806b2f',
+          PERMISO_SOLICITADO: '#a24e32',
+          APROBADA: '#38684a',
           PRESELECCIONADA: '#3d5d84',
           SCOUTING: '#806b2f',
           TRAMITANDO_PERMISO: '#a24e32',
@@ -112,6 +125,10 @@ export default function MapaLocalizaciones({
           DESCARTADA: '#666a64',
         };
         const statusLabels: Record<string, string> = {
+          EN_VALORACION: 'En valoración',
+          PROPUESTA: 'Propuesta',
+          PERMISO_SOLICITADO: 'Permiso solicitado',
+          APROBADA: 'Aprobada',
           PRESELECCIONADA: 'Preseleccionada',
           SCOUTING: 'Scouting',
           TRAMITANDO_PERMISO: 'Tramitando permiso',

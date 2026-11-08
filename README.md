@@ -6,6 +6,10 @@ LocaMad usa NextAuth con credenciales y contraseñas almacenadas como hash bcryp
 
 Para crear o actualizar la cuenta de prueba sin borrar el catálogo, ejecuta `npm run seed:auth`. En desarrollo usa `produccion@locamad.es` con la contraseña `LocamadDemo2026!`; puedes sobrescribirla con `LOCAMAD_DEMO_PASSWORD` antes de ejecutar el seed. En producción, configura esa variable explícitamente y define `NEXTAUTH_SECRET` y `NEXTAUTH_URL` en el entorno de despliegue.
 
+## Fotografías de scouting
+
+Las fotos se guardan en `Localizacion.fotos`; la primera URL de la lista es la portada. En desarrollo se almacenan en `public/uploads`. En Vercel, conecta un almacén Vercel Blob al proyecto y configura `BLOB_READ_WRITE_TOKEN`; la carga directa a Blob evita depender del sistema de archivos efímero de las funciones serverless. Se admiten JPG, PNG y WebP de hasta 8 MB, con un máximo de ocho fotos por localización.
+
 ## Búsqueda global
 
 El buscador principal permite consultar el catálogo y los lugares de OpenStreetMap. La búsqueda externa se realiza al enviar el formulario (no hay autocompletado) mediante Nominatim, con Madrid como zona predeterminada, una consulta por segundo como máximo por proceso y atribución visible a OpenStreetMap. El catálogo actual representa título, categoría y descripción mediante los campos Prisma `nombre`, `tipoEspacio` y `estilo`, respectivamente; la búsqueda también incluye dirección, municipio y barrio.

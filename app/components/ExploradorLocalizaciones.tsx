@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { createPortal } from "react-dom";
 import { signOut } from "next-auth/react";
 import * as SunCalc from "suncalc";
 import { nombreRol, puedeGestionarLocalizaciones } from "@/lib/roles";
@@ -454,6 +455,7 @@ export default function ExploradorLocalizaciones({
       esZbe: localizacion.esZbe,
       distritoBarrio: localizacion.distritoBarrio,
       tipoEspacio: localizacion.tipoEspacio,
+      fotoPortada: localizacion.fotos[0] ?? null,
       estadoProyecto: (
         proyectoActivoId === "todos"
           ? localizacion.asignaciones[0]
@@ -1044,6 +1046,18 @@ export default function ExploradorLocalizaciones({
                           <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-[#edf1ea] font-mono text-[11px] font-semibold text-[#4c654b]">
                             {String(index + 1).padStart(2, "0")}
                           </span>
+                          {localizacion.fotos[0] && (
+                            <span className="relative mt-0.5 size-16 shrink-0 overflow-hidden border border-[#e1e4dd] bg-[#edf1ea]">
+                              <Image
+                                alt={`Foto de portada: ${localizacion.nombre}`}
+                                className="object-cover"
+                                fill
+                                sizes="64px"
+                                src={localizacion.fotos[0]}
+                                unoptimized
+                              />
+                            </span>
+                          )}
                           <span className="min-w-0">
                             <span className="line-clamp-1 block text-sm font-semibold leading-5">{localizacion.nombre}</span>
                             <span className="mt-1 line-clamp-1 block text-xs text-[#747b72]">
@@ -1572,6 +1586,16 @@ function Detail({
 
 function CarruselFotos({ fotos, nombre }: { fotos: string[]; nombre: string }) {
   const [indice, setIndice] = useState(0);
+  const [visorAbierto, setVisorAbierto] = useState(false);
+
+  useEffect(() => {
+    if (!visorAbierto) return;
+    const cerrarConEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setVisorAbierto(false);
+    };
+    window.addEventListener("keydown", cerrarConEscape);
+    return () => window.removeEventListener("keydown", cerrarConEscape);
+  }, [visorAbierto]);
 
   if (fotos.length === 0) {
     return (
@@ -1585,15 +1609,22 @@ function CarruselFotos({ fotos, nombre }: { fotos: string[]; nombre: string }) {
 
   return (
     <figure className="relative overflow-hidden border border-[#dfe3db] bg-white">
-      <Image
-        alt={`${nombre}, fotografía ${indiceVisible + 1}`}
-        className="aspect-[16/8] w-full object-cover"
-        height={800}
-        loading="eager"
-        unoptimized
-        src={fotos[indiceVisible]}
-        width={1600}
-      />
+      <button
+        aria-label={`Ampliar fotografía ${indiceVisible + 1} de ${nombre}`}
+        className="block w-full cursor-zoom-in"
+        onClick={() => setVisorAbierto(true)}
+        type="button"
+      >
+        <Image
+          alt={`${nombre}, fotografía ${indiceVisible + 1}`}
+          className="aspect-[16/8] w-full object-cover"
+          height={800}
+          loading="eager"
+          unoptimized
+          src={fotos[indiceVisible]}
+          width={1600}
+        />
+      </button>
       {fotos.length > 1 && (
         <>
           <button
@@ -1616,6 +1647,28 @@ function CarruselFotos({ fotos, nombre }: { fotos: string[]; nombre: string }) {
             {indiceVisible + 1} / {fotos.length}
           </figcaption>
         </>
+      )}
+      {visorAbierto && typeof document !== "undefined" && createPortal(
+        <div
+          aria-label={`Fotografía ampliada de ${nombre}`}
+          aria-modal="true"
+          className="fixed inset-0 z-[1400] flex items-center justify-center bg-[#101613]/95 p-4 sm:p-8"
+          onClick={() => setVisorAbierto(false)}
+          role="dialog"
+        >
+          <button
+            aria-label="Cerrar visor"
+            className="absolute right-4 top-4 z-10 grid size-10 place-items-center border border-white/30 bg-black/40 text-white hover:bg-black/70"
+            onClick={() => setVisorAbierto(false)}
+            type="button"
+          >
+            <X size={20} />
+          </button>
+          <div className="relative h-full max-h-[90vh] w-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+            <Image alt={`${nombre}, fotografía ampliada`} className="object-contain" fill sizes="100vw" src={fotos[indiceVisible]} unoptimized />
+          </div>
+        </div>,
+        document.body,
       )}
     </figure>
   );
@@ -1656,18 +1709,33 @@ function DossierScouting({ localizaciones }: { localizaciones: Localizacion[] })
           </p>
 
           {localizacion.fotos.length > 0 ? (
-            <div className="locamad-dossier-photos">
-              {localizacion.fotos.slice(0, 4).map((foto, fotoIndice) => (
+            <div className="locamad-dossier-photo-layout">
+              <figure className="locamad-dossier-cover-photo">
                 <Image
-                  alt={`${localizacion.nombre}, fotografía ${fotoIndice + 1}`}
+                  alt={`${localizacion.nombre}, foto de portada`}
                   height={800}
-                  key={`${foto}-${fotoIndice}`}
                   loading="eager"
-                  src={foto}
+                  src={localizacion.fotos[0]}
                   unoptimized
                   width={1200}
                 />
-              ))}
+                <figcaption>Foto de portada</figcaption>
+              </figure>
+              {localizacion.fotos.length > 1 && (
+                <div className="locamad-dossier-photos">
+                  {localizacion.fotos.slice(1).map((foto, fotoIndice) => (
+                    <Image
+                      alt={`${localizacion.nombre}, fotografía ${fotoIndice + 2}`}
+                      height={600}
+                      key={`${foto}-${fotoIndice}`}
+                      loading="eager"
+                      src={foto}
+                      unoptimized
+                      width={900}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           ) : (
             <div className="locamad-dossier-no-photo">Sin fotografías disponibles</div>

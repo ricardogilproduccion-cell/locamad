@@ -6,6 +6,7 @@ import { TipoAparcamiento } from "@prisma/client";
 import { authOptions } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { puedeGestionarLocalizaciones } from "@/lib/roles";
+import { esFotoSubidaValida } from "@/lib/fotos-localizacion";
 
 interface CrearLocalizacionState {
   status: "idle" | "error" | "success";
@@ -13,20 +14,19 @@ interface CrearLocalizacionState {
 }
 
 const tiposEspacioValidos = new Set(["Industrial", "Palacete", "Vivienda", "Exterior"]);
-const fotoLocalValida = /^\/uploads\/[\w-]+\.(?:jpg|png|webp)$/i;
-
 function leerFotos(formData: FormData): string[] | null {
   try {
     const fotos: unknown = JSON.parse(String(formData.get("fotos") ?? "[]"));
     if (
       !Array.isArray(fotos) ||
       fotos.length > 8 ||
-      fotos.some((foto) => typeof foto !== "string" || !fotoLocalValida.test(foto))
+      fotos.some((foto) => !esFotoSubidaValida(foto))
     ) {
       return null;
     }
     return fotos;
-  } catch {
+  } catch (error) {
+    console.error("Could not create location with scouting photos.", error);
     return null;
   }
 }
