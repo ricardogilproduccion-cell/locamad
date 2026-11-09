@@ -1251,13 +1251,12 @@ export default function ExploradorLocalizaciones({
                   <Detail icon={<Building2 size={14} />} label="Base de producción" value={localizacionActiva.espacioBaseProd ? "Disponible" : "No disponible"} />
                   <Detail label="Aparcamiento SER" value={aparcamientoLabel[localizacionActiva.aparcamientoSer] ?? localizacionActiva.aparcamientoSer} />
                 </dl>
-              </section>
-
               <EditorLogisticaLocalizacion
                 key={localizacionActiva.id}
                 localizacion={localizacionActiva}
                 puedeEditar={puedeGestionar}
               />
+              </section>
 
               <section className="border-t border-[#e1e4dd] pt-5">
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Luz y sonido</h3>
@@ -1887,7 +1886,7 @@ function EditorLogisticaLocalizacion({
   };
 
   return (
-    <section>
+    <div>
       <CalculadoraReservaEspacio
         disabled={!puedeEditar || guardando}
         onChange={setDatos}
@@ -1907,6 +1906,6 @@ function EditorLogisticaLocalizacion({
           </button>
         </div>
       )}
-    </section>
+    </div>
   );
 }

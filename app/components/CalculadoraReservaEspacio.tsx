@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Minus, Plus } from "lucide-react";
 import {
   calcularMetrosLineales,
@@ -36,17 +35,14 @@ const vehiculos: Array<{
 export default function CalculadoraReservaEspacio({
   value,
   onChange,
-  defaultOpen = false,
   disabled = false,
 }: {
   value: DatosLogistica;
   onChange: (value: DatosLogistica) => void;
-  defaultOpen?: boolean;
   disabled?: boolean;
 }) {
-  const [abierta, setAbierta] = useState(defaultOpen);
   const total = calcularMetrosLineales(value.desgloseVehiculos);
-  const plazas = Math.round(total / 5);
+  const plazas = Math.ceil(total / 5);
 
   const actualizarVehiculo = (key: TipoVehiculo, incremento: number) => {
     const cantidadActual = value.desgloseVehiculos[key];
@@ -58,24 +54,20 @@ export default function CalculadoraReservaEspacio({
   };
 
   return (
-    <details
-      className="border-t border-[#e1e4dd] pt-5"
-      onToggle={(event) => setAbierta(event.currentTarget.open)}
-      open={abierta}
-    >
-      <summary className="cursor-pointer list-none text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">
+    <div className="border-t border-[#e1e4dd] pt-5">
+      <h4 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">
         Calculadora de Reserva de Espacio (Vía Pública)
-      </summary>
+      </h4>
       <div className="mt-4">
         <div
           aria-live="polite"
           className="border border-[#b8cdbb] bg-[#edf4ed] px-4 py-4 text-center"
         >
           <p className="text-sm font-bold text-[#315d48]">
-            Total reserva: {total} {total === 1 ? "metro lineal" : "metros lineales"}
+            Metros necesarios: {total} m
           </p>
           <p className="mt-1 text-xs text-[#596b59]">
-            Aprox. {plazas} {plazas === 1 ? "plaza" : "plazas"} en cordón
+            Equivalente a: ~{plazas} {plazas === 1 ? "plaza" : "plazas"} en cordón
           </p>
         </div>
 
@@ -119,29 +111,32 @@ export default function CalculadoraReservaEspacio({
           })}
         </div>
 
-        <label className="mt-3 flex items-center justify-between gap-3 border border-[#e1e4dd] bg-white px-3 py-2 text-xs font-medium text-[#50594f]">
-          Margen de maniobra y seguridad
-          <select
-            className="h-9 border border-[#dfe3db] bg-white px-2 text-sm font-normal text-[#20251f] outline-none focus:border-[#718a72]"
-            disabled={disabled}
-            onChange={(event) => onChange({
-              ...value,
-              desgloseVehiculos: {
-                ...value.desgloseVehiculos,
-                margenManiobraM: Number(event.target.value),
-              },
-            })}
-            value={value.desgloseVehiculos.margenManiobraM}
-          >
-            {[0, 5, 10, ...(value.desgloseVehiculos.margenManiobraM > 10
-              ? [value.desgloseVehiculos.margenManiobraM]
-              : [])].map((metros) => (
-              <option key={metros} value={metros}>
-                {metros === 0 ? "Sin margen" : `Añadir ${metros} m`}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="mt-3 flex items-center justify-between gap-3 border border-[#e1e4dd] bg-white px-3 py-2 text-xs text-[#50594f]">
+          <span>Margen de seguridad <span className="block text-[10px] text-[#858b82]">Pasos de 5 m</span></span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              aria-label="Reducir margen de seguridad"
+              className="grid size-8 place-items-center border border-[#dfe3db] text-[#315d48] hover:bg-[#edf3ec] disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={disabled || value.desgloseVehiculos.margenManiobraM === 0}
+              onClick={() => actualizarMargen(-5)}
+              type="button"
+            >
+              <Minus size={15} />
+            </button>
+            <output aria-label={`Margen de seguridad: ${value.desgloseVehiculos.margenManiobraM} metros`} className="min-w-10 text-center text-sm font-semibold text-[#20251f]">
+              {value.desgloseVehiculos.margenManiobraM} m
+            </output>
+            <button
+              aria-label="Aumentar margen de seguridad"
+              className="grid size-8 place-items-center border border-[#dfe3db] text-[#315d48] hover:bg-[#edf3ec] disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={disabled || value.desgloseVehiculos.margenManiobraM >= 495}
+              onClick={() => actualizarMargen(5)}
+              type="button"
+            >
+              <Plus size={15} />
+            </button>
+          </div>
+        </div>
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5 text-xs font-medium text-[#50594f]">
@@ -186,6 +181,17 @@ export default function CalculadoraReservaEspacio({
           </label>
         </div>
       </div>
-    </details>
+    </div>
   );
+
+  function actualizarMargen(incremento: number) {
+    const margenManiobraM = Math.max(
+      0,
+      Math.min(495, value.desgloseVehiculos.margenManiobraM + incremento),
+    );
+    onChange({
+      ...value,
+      desgloseVehiculos: { ...value.desgloseVehiculos, margenManiobraM },
+    });
+  }
 }

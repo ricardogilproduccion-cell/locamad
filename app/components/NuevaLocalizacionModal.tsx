@@ -261,7 +261,7 @@ export default function NuevaLocalizacionModal({
               </div>
             </section>
 
-            <CalculadoraReservaEspacio defaultOpen onChange={setLogistica} value={logistica} />
+            <CalculadoraReservaEspacio onChange={setLogistica} value={logistica} />
 
             <section className="border-t border-[#e1e4dd] pt-5">
               <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Contacto y acometida</h3>
