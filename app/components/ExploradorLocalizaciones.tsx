@@ -7,7 +7,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -49,12 +48,10 @@ import AsignarProyectoLocalizacion from "./AsignarProyectoLocalizacion";
 import MapaLocalizacionesCliente from "./MapaLocalizacionesCliente";
 import { crearProyecto } from "../actions/crearProyecto";
 import { actualizarLogisticaLocalizacion } from "../actions/logisticaLocalizacion";
-import CalculadoraReservaEspacio from "./CalculadoraReservaEspacio";
 import {
   calcularMetrosLineales,
   normalizarDatosLogistica,
   parseDesgloseVehiculos,
-  type DatosLogistica,
   type DesgloseVehiculos,
 } from "@/lib/logistica-localizacion";
 
@@ -255,6 +252,11 @@ export default function ExploradorLocalizaciones({
 }) {
   const router = useRouter();
   const puedeGestionar = puedeGestionarLocalizaciones(usuario?.rol);
+  const [camionesPesados, setCamionesPesados] = useState(0);
+  const [camionesMedios, setCamionesMedios] = useState(0);
+  const [furgonetas, setFurgonetas] = useState(0);
+  const [guardandoReserva, setGuardandoReserva] = useState(false);
+  const [mensajeReserva, setMensajeReserva] = useState("");
   const [localizacionesNuevas, setLocalizacionesNuevas] = useState<Localizacion[]>([]);
   const localizacionesCatalogo = useMemo(
     () => [
@@ -452,6 +454,40 @@ export default function ExploradorLocalizaciones({
     () => localizacionesCatalogo.find((localizacion) => localizacion.id === localizacionActivaId),
     [localizacionesCatalogo, localizacionActivaId],
   );
+  useEffect(() => {
+    if (!localizacionActiva) return;
+    const desglose = parseDesgloseVehiculos(localizacionActiva.desgloseVehiculos);
+    setCamionesPesados(desglose?.camionesPesados ?? 0);
+    setCamionesMedios(desglose?.camionesMedios ?? 0);
+    setFurgonetas(desglose?.furgonetas ?? 0);
+    setMensajeReserva("");
+  }, [localizacionActiva]);
+
+  const guardarReserva = async () => {
+    if (!localizacionActiva || !puedeGestionar || guardandoReserva) return;
+    setGuardandoReserva(true);
+    setMensajeReserva("");
+    try {
+      const datosActuales = normalizarDatosLogistica(localizacionActiva);
+      const resultado = await actualizarLogisticaLocalizacion(localizacionActiva.id, {
+        ...datosActuales,
+        desgloseVehiculos: {
+          camionesPesados,
+          camionesMedios,
+          furgonetas,
+          margenManiobraM: 0,
+        },
+      });
+      setMensajeReserva(resultado.message);
+      if (resultado.status === "success") router.refresh();
+    } catch (error) {
+      console.error("Could not save location space reservation from the scouting panel.", error);
+      setMensajeReserva("No se pudo guardar la reserva de espacio.");
+    } finally {
+      setGuardandoReserva(false);
+    }
+  };
+
   const enCentro = useMemo(
     () => localizacionesCatalogo.filter((localizacion) => localizacion.esZbedepCentro).length,
     [localizacionesCatalogo],
@@ -1251,11 +1287,66 @@ export default function ExploradorLocalizaciones({
                   <Detail icon={<Building2 size={14} />} label="Base de producción" value={localizacionActiva.espacioBaseProd ? "Disponible" : "No disponible"} />
                   <Detail label="Aparcamiento SER" value={aparcamientoLabel[localizacionActiva.aparcamientoSer] ?? localizacionActiva.aparcamientoSer} />
                 </dl>
-              <EditorLogisticaLocalizacion
-                key={localizacionActiva.id}
-                localizacion={localizacionActiva}
-                puedeEditar={puedeGestionar}
-              />
+                <div className="my-4 rounded-lg border border-neutral-700 bg-neutral-900 p-3">
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+                    Calculadora Reserva de Espacio (Vía Pública)
+                  </div>
+
+                  <div className="space-y-2 text-sm text-neutral-200">
+                    <div className="flex items-center justify-between">
+                      <span>Camión pesado / Grupo (14m)</span>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setCamionesPesados(Math.max(0, camionesPesados - 1))} className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1">-</button>
+                        <span className="w-6 text-center font-bold">{camionesPesados}</span>
+                        <button type="button" onClick={() => setCamionesPesados(camionesPesados + 1)} className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1">+</button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span>Camión medio / Grip (10m)</span>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setCamionesMedios(Math.max(0, camionesMedios - 1))} className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1">-</button>
+                        <span className="w-6 text-center font-bold">{camionesMedios}</span>
+                        <button type="button" onClick={() => setCamionesMedios(camionesMedios + 1)} className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1">+</button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span>Furgonetas rodaje (6m)</span>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => setFurgonetas(Math.max(0, furgonetas - 1))} className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1">-</button>
+                        <span className="w-6 text-center font-bold">{furgonetas}</span>
+                        <button type="button" onClick={() => setFurgonetas(furgonetas + 1)} className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1">+</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between border-t border-neutral-700 pt-3 text-xs">
+                    <div>
+                      <span className="text-neutral-400">Total: </span>
+                      <span className="text-sm font-bold text-emerald-400">
+                        {(camionesPesados * 14) + (camionesMedios * 10) + (furgonetas * 6)} m
+                      </span>
+                    </div>
+                    <div className="text-neutral-400">
+                      ~{Math.ceil(((camionesPesados * 14) + (camionesMedios * 10) + (furgonetas * 6)) / 5)} plazas cordón
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <p aria-live="polite" className="text-xs text-neutral-400">{mensajeReserva}</p>
+                    {puedeGestionar && (
+                      <button
+                        className="rounded bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-wait disabled:opacity-60"
+                        disabled={guardandoReserva}
+                        onClick={guardarReserva}
+                        type="button"
+                      >
+                        {guardandoReserva ? "Guardando..." : "Guardar reserva"}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </section>
 
               <section className="border-t border-[#e1e4dd] pt-5">
@@ -1856,56 +1947,5 @@ function DossierScouting({ localizaciones }: { localizaciones: Localizacion[] })
         );
       })}
     </main>
-  );
-}
-
-function EditorLogisticaLocalizacion({
-  localizacion,
-  puedeEditar,
-}: {
-  localizacion: Localizacion;
-  puedeEditar: boolean;
-}) {
-  const router = useRouter();
-  const [datos, setDatos] = useState<DatosLogistica>(() => normalizarDatosLogistica(localizacion));
-  const [mensaje, setMensaje] = useState("");
-  const [guardando, iniciarGuardado] = useTransition();
-
-  const guardar = () => {
-    setMensaje("Guardando...");
-    iniciarGuardado(async () => {
-      try {
-        const resultado = await actualizarLogisticaLocalizacion(localizacion.id, datos);
-        setMensaje(resultado.message);
-        if (resultado.status === "success") router.refresh();
-      } catch (error) {
-        console.error("Could not save location logistics from the scouting panel.", error);
-        setMensaje("No se pudo guardar la logística de vía pública.");
-      }
-    });
-  };
-
-  return (
-    <div>
-      <CalculadoraReservaEspacio
-        disabled={!puedeEditar || guardando}
-        onChange={setDatos}
-        value={datos}
-      />
-      {puedeEditar && (
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <p aria-live="polite" className="text-[11px] text-[#737a71]">{mensaje}</p>
-          <button
-            className="inline-flex h-9 items-center gap-2 bg-[#315d48] px-3 text-xs font-semibold text-white hover:bg-[#244b38] disabled:cursor-wait disabled:opacity-60"
-            disabled={guardando}
-            onClick={guardar}
-            type="button"
-          >
-            {guardando ? <LoaderCircle className="animate-spin" size={14} /> : <Save size={14} />}
-            {guardando ? "Guardando..." : "Guardar reserva"}
-          </button>
-        </div>
-      )}
-    </div>
   );
 }
