@@ -13,12 +13,10 @@ export const opcionesAfeccionTrafico = [
 ] as const;
 
 export interface DesgloseVehiculos {
-  camionesLuces: number;
-  camionesGripo: number;
-  grupoElectrogeno: number;
-  trailersVestuario: number;
+  camionesPesados: number;
+  camionesMedios: number;
   furgonetas: number;
-  espaciosSeguridad: number;
+  margenManiobraM: number;
 }
 
 export interface DatosLogistica {
@@ -29,24 +27,51 @@ export interface DatosLogistica {
 }
 
 export const desgloseVehiculosVacio: DesgloseVehiculos = {
-  camionesLuces: 0,
-  camionesGripo: 0,
-  grupoElectrogeno: 0,
-  trailersVestuario: 0,
+  camionesPesados: 0,
+  camionesMedios: 0,
   furgonetas: 0,
-  espaciosSeguridad: 0,
+  margenManiobraM: 0,
 };
 
 export function parseDesgloseVehiculos(value: unknown): DesgloseVehiculos | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
 
   const data = value as Record<string, unknown>;
-  const leerCantidad = (key: keyof DesgloseVehiculos) => {
+  const leerCantidad = (key: string) => {
     const cantidad = data[key];
     return typeof cantidad === "number" && Number.isInteger(cantidad) && cantidad >= 0 && cantidad <= 99
       ? cantidad
       : null;
   };
+  const leerMargen = (key: string) => {
+    const margen = data[key];
+    return typeof margen === "number" &&
+      Number.isInteger(margen) &&
+      margen >= 0 &&
+      margen <= 495 &&
+      margen % 5 === 0
+      ? margen
+      : null;
+  };
+
+  if ("camionesPesados" in data || "camionesMedios" in data || "margenManiobraM" in data) {
+    const camionesPesados = leerCantidad("camionesPesados");
+    const camionesMedios = leerCantidad("camionesMedios");
+    const furgonetas = leerCantidad("furgonetas");
+    const margenManiobraM = leerMargen("margenManiobraM");
+
+    if (
+      camionesPesados === null ||
+      camionesMedios === null ||
+      furgonetas === null ||
+      margenManiobraM === null
+    ) {
+      return null;
+    }
+
+    return { camionesPesados, camionesMedios, furgonetas, margenManiobraM };
+  }
+
   const camionesLuces = leerCantidad("camionesLuces");
   const camionesGripo = leerCantidad("camionesGripo");
   const grupoElectrogeno = leerCantidad("grupoElectrogeno");
@@ -66,21 +91,19 @@ export function parseDesgloseVehiculos(value: unknown): DesgloseVehiculos | null
   }
 
   return {
-    camionesLuces,
-    camionesGripo,
-    grupoElectrogeno,
-    trailersVestuario,
+    camionesPesados: camionesLuces + camionesGripo + grupoElectrogeno,
+    camionesMedios: trailersVestuario,
     furgonetas,
-    espaciosSeguridad,
+    margenManiobraM: espaciosSeguridad * 5,
   };
 }
 
 export function calcularMetrosLineales(desglose: DesgloseVehiculos): number {
   return (
-    (desglose.camionesLuces + desglose.camionesGripo + desglose.grupoElectrogeno) * 13 +
-    desglose.trailersVestuario * 9 +
+    desglose.camionesPesados * 14 +
+    desglose.camionesMedios * 10 +
     desglose.furgonetas * 6 +
-    desglose.espaciosSeguridad * 5
+    desglose.margenManiobraM
   );
 }
 

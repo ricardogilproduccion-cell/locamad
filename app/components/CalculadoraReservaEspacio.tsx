@@ -1,25 +1,36 @@
 "use client";
 
 import { useState } from "react";
+import { Minus, Plus } from "lucide-react";
 import {
   calcularMetrosLineales,
   type DatosLogistica,
-  type DesgloseVehiculos,
   opcionesAfeccionTrafico,
   opcionesEstacionamiento,
 } from "@/lib/logistica-localizacion";
 
+type TipoVehiculo = "camionesPesados" | "camionesMedios" | "furgonetas";
+
 const vehiculos: Array<{
-  key: keyof DesgloseVehiculos;
+  key: TipoVehiculo;
   label: string;
-  longitud: string;
+  longitud: number;
 }> = [
-  { key: "camionesLuces", label: "Camión pesado de luces", longitud: "~13 m" },
-  { key: "camionesGripo", label: "Camión grúa / equipo", longitud: "~13 m" },
-  { key: "grupoElectrogeno", label: "Grupo electrógeno sobre camión", longitud: "~13 m" },
-  { key: "trailersVestuario", label: "Tráiler de vestuario / maquillaje", longitud: "~9 m" },
-  { key: "furgonetas", label: "Furgoneta técnica", longitud: "~6 m" },
-  { key: "espaciosSeguridad", label: "Espacio de seguridad / maniobra", longitud: "~5 m" },
+  {
+    key: "camionesPesados",
+    label: "Camión pesado / Grupo electrógeno en camión",
+    longitud: 14,
+  },
+  {
+    key: "camionesMedios",
+    label: "Camión medio / Tráiler vestuario y maquillaje",
+    longitud: 10,
+  },
+  {
+    key: "furgonetas",
+    label: "Furgonetas de rodaje / Producción",
+    longitud: 6,
+  },
 ];
 
 export default function CalculadoraReservaEspacio({
@@ -35,11 +46,14 @@ export default function CalculadoraReservaEspacio({
 }) {
   const [abierta, setAbierta] = useState(defaultOpen);
   const total = calcularMetrosLineales(value.desgloseVehiculos);
+  const plazas = Math.round(total / 5);
 
-  const actualizarVehiculo = (key: keyof DesgloseVehiculos, count: number) => {
+  const actualizarVehiculo = (key: TipoVehiculo, incremento: number) => {
+    const cantidadActual = value.desgloseVehiculos[key];
+    const cantidadNueva = Math.max(0, Math.min(99, cantidadActual + incremento));
     onChange({
       ...value,
-      desgloseVehiculos: { ...value.desgloseVehiculos, [key]: count },
+      desgloseVehiculos: { ...value.desgloseVehiculos, [key]: cantidadNueva },
     });
   };
 
@@ -50,34 +64,84 @@ export default function CalculadoraReservaEspacio({
       open={abierta}
     >
       <summary className="cursor-pointer list-none text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">
-        Logística y Vía Pública
+        Calculadora de Reserva de Espacio (Vía Pública)
       </summary>
       <div className="mt-4">
-        <div className="flex items-center justify-between gap-3 border border-[#dfe3db] bg-white px-3 py-3">
-          <span className="text-xs font-semibold text-[#50594f]">Reserva estimada</span>
-          <span aria-live="polite" className="text-lg font-bold text-[#315d48]">{total} m lineales</span>
+        <div
+          aria-live="polite"
+          className="border border-[#b8cdbb] bg-[#edf4ed] px-4 py-4 text-center"
+        >
+          <p className="text-sm font-bold text-[#315d48]">
+            Total reserva: {total} {total === 1 ? "metro lineal" : "metros lineales"}
+          </p>
+          <p className="mt-1 text-xs text-[#596b59]">
+            Aprox. {plazas} {plazas === 1 ? "plaza" : "plazas"} en cordón
+          </p>
         </div>
 
         <div className="mt-3 space-y-2">
-          {vehiculos.map(({ key, label, longitud }) => (
-            <label
-              className="flex items-center justify-between gap-3 border border-[#e1e4dd] bg-white px-3 py-2 text-xs text-[#50594f]"
-              key={key}
-            >
-              <span>{label} <span className="text-[10px] text-[#858b82]">{longitud} c/u</span></span>
-              <input
-                aria-label={`Número: ${label}`}
-                className="h-9 w-20 border border-[#dfe3db] px-2 text-sm text-[#20251f] outline-none focus:border-[#718a72]"
-                max={99}
-                min={0}
-                disabled={disabled}
-                onChange={(event) => actualizarVehiculo(key, Number(event.target.value))}
-                type="number"
-                value={value.desgloseVehiculos[key]}
-              />
-            </label>
-          ))}
+          {vehiculos.map(({ key, label, longitud }) => {
+            const cantidad = value.desgloseVehiculos[key];
+            return (
+              <div
+                className="flex items-center justify-between gap-3 border border-[#e1e4dd] bg-white px-3 py-2 text-xs text-[#50594f]"
+                key={key}
+              >
+                <span className="min-w-0">
+                  {label}
+                  <span className="block text-[10px] text-[#858b82]">~{longitud} m por unidad</span>
+                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    aria-label={`Quitar ${label}`}
+                    className="grid size-8 place-items-center border border-[#dfe3db] text-[#315d48] hover:bg-[#edf3ec] disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={disabled || cantidad === 0}
+                    onClick={() => actualizarVehiculo(key, -1)}
+                    type="button"
+                  >
+                    <Minus size={15} />
+                  </button>
+                  <output aria-label={`${label}: ${cantidad}`} className="min-w-6 text-center text-sm font-semibold text-[#20251f]">
+                    {cantidad}
+                  </output>
+                  <button
+                    aria-label={`Añadir ${label}`}
+                    className="grid size-8 place-items-center border border-[#dfe3db] text-[#315d48] hover:bg-[#edf3ec] disabled:cursor-not-allowed disabled:opacity-40"
+                    disabled={disabled || cantidad === 99}
+                    onClick={() => actualizarVehiculo(key, 1)}
+                    type="button"
+                  >
+                    <Plus size={15} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
+
+        <label className="mt-3 flex items-center justify-between gap-3 border border-[#e1e4dd] bg-white px-3 py-2 text-xs font-medium text-[#50594f]">
+          Margen de maniobra y seguridad
+          <select
+            className="h-9 border border-[#dfe3db] bg-white px-2 text-sm font-normal text-[#20251f] outline-none focus:border-[#718a72]"
+            disabled={disabled}
+            onChange={(event) => onChange({
+              ...value,
+              desgloseVehiculos: {
+                ...value.desgloseVehiculos,
+                margenManiobraM: Number(event.target.value),
+              },
+            })}
+            value={value.desgloseVehiculos.margenManiobraM}
+          >
+            {[0, 5, 10, ...(value.desgloseVehiculos.margenManiobraM > 10
+              ? [value.desgloseVehiculos.margenManiobraM]
+              : [])].map((metros) => (
+              <option key={metros} value={metros}>
+                {metros === 0 ? "Sin margen" : `Añadir ${metros} m`}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5 text-xs font-medium text-[#50594f]">

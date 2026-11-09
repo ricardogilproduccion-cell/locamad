@@ -1722,12 +1722,9 @@ function DossierScouting({ localizaciones }: { localizaciones: Localizacion[] })
           localizacion.metrosLineales ??
           (desglose ? calcularMetrosLineales(desglose) : null);
         const vehiculos: Array<[keyof DesgloseVehiculos, string]> = [
-          ["camionesLuces", "Camiones de luces"],
-          ["camionesGripo", "Camiones grúa / equipo"],
-          ["grupoElectrogeno", "Grupos electrógenos sobre camión"],
-          ["trailersVestuario", "Tráileres de vestuario / maquillaje"],
+          ["camionesPesados", "Camiones pesados / grupos electrógenos en camión"],
+          ["camionesMedios", "Camiones medios / tráileres de vestuario y maquillaje"],
           ["furgonetas", "Furgonetas técnicas"],
-          ["espaciosSeguridad", "Espacios de seguridad / maniobra"],
         ];
 
         return (
@@ -1813,6 +1810,9 @@ function DossierScouting({ localizaciones }: { localizaciones: Localizacion[] })
               ))
             ) : (
               <li>Sin vehículos registrados.</li>
+            )}
+            {desglose && desglose.margenManiobraM > 0 && (
+              <li>Margen de maniobra y seguridad: {desglose.margenManiobraM} m</li>
             )}
           </ul>
           <p className="locamad-dossier-note">
@@ -1903,7 +1903,7 @@ function EditorLogisticaLocalizacion({
             type="button"
           >
             {guardando ? <LoaderCircle className="animate-spin" size={14} /> : <Save size={14} />}
-            {guardando ? "Guardando..." : "Guardar logística"}
+            {guardando ? "Guardando..." : "Guardar reserva"}
           </button>
         </div>
       )}

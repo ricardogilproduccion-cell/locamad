@@ -34,12 +34,10 @@ export async function actualizarLogisticaLocalizacion(
       data: {
         metrosLineales: calcularMetrosLineales(datos.desgloseVehiculos),
         desgloseVehiculos: {
-          camionesLuces: datos.desgloseVehiculos.camionesLuces,
-          camionesGripo: datos.desgloseVehiculos.camionesGripo,
-          grupoElectrogeno: datos.desgloseVehiculos.grupoElectrogeno,
-          trailersVestuario: datos.desgloseVehiculos.trailersVestuario,
+          camionesPesados: datos.desgloseVehiculos.camionesPesados,
+          camionesMedios: datos.desgloseVehiculos.camionesMedios,
           furgonetas: datos.desgloseVehiculos.furgonetas,
-          espaciosSeguridad: datos.desgloseVehiculos.espaciosSeguridad,
+          margenManiobraM: datos.desgloseVehiculos.margenManiobraM,
         } satisfies Prisma.InputJsonObject,
         tipoEstacionamiento: datos.tipoEstacionamiento,
         afeccionTrafico: datos.afeccionTrafico,
