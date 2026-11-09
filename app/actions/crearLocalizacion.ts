@@ -3,10 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth/next";
 import { TipoAparcamiento } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 import { authOptions } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { puedeGestionarLocalizaciones } from "@/lib/roles";
 import { esFotoSubidaValida } from "@/lib/fotos-localizacion";
+import {
+  calcularMetrosLineales,
+  validarDatosLogistica,
+} from "@/lib/logistica-localizacion";
 
 interface CrearLocalizacionState {
   status: "idle" | "error" | "success";
@@ -91,6 +96,22 @@ export async function crearLocalizacion(
     return { status: "error", message: "La galería admite hasta ocho imágenes subidas válidas." };
   }
 
+  let desgloseVehiculos: unknown;
+  try {
+    desgloseVehiculos = JSON.parse(texto("desgloseVehiculos"));
+  } catch {
+    return { status: "error", message: "No se pudo leer el desglose de vehículos." };
+  }
+  const datosLogistica = validarDatosLogistica({
+    desgloseVehiculos,
+    tipoEstacionamiento: texto("tipoEstacionamiento") || null,
+    afeccionTrafico: texto("afeccionTrafico") || null,
+    notasPermisos: texto("notasPermisos"),
+  });
+  if (!datosLogistica) {
+    return { status: "error", message: "Revisa los datos de logística y ocupación de vía pública." };
+  }
+
   const esZbedepCentro = formData.has("esZbedepCentro");
   const tipoAparcamiento = texto("aparcamientoSer");
   const aparcamientoSer =
@@ -114,6 +135,18 @@ export async function crearLocalizacion(
         potenciaElectricaKw,
         galiboCamionesM,
         aparcamientoSer,
+        metrosLineales: calcularMetrosLineales(datosLogistica.desgloseVehiculos),
+        desgloseVehiculos: {
+          camionesLuces: datosLogistica.desgloseVehiculos.camionesLuces,
+          camionesGripo: datosLogistica.desgloseVehiculos.camionesGripo,
+          grupoElectrogeno: datosLogistica.desgloseVehiculos.grupoElectrogeno,
+          trailersVestuario: datosLogistica.desgloseVehiculos.trailersVestuario,
+          furgonetas: datosLogistica.desgloseVehiculos.furgonetas,
+          espaciosSeguridad: datosLogistica.desgloseVehiculos.espaciosSeguridad,
+        } satisfies Prisma.InputJsonObject,
+        tipoEstacionamiento: datosLogistica.tipoEstacionamiento,
+        afeccionTrafico: datosLogistica.afeccionTrafico,
+        notasPermisos: datosLogistica.notasPermisos || null,
         esZbe: formData.has("esZbe") || esZbedepCentro,
         esZbedepCentro,
         espacioBaseProd: formData.has("espacioBaseProd"),
@@ -132,7 +165,8 @@ export async function crearLocalizacion(
           : {}),
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("Could not create location with public-space logistics.", error);
     return { status: "error", message: "No se pudo guardar la localización. Inténtalo de nuevo." };
   }
 

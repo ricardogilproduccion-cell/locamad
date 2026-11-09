@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
 } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -47,6 +48,15 @@ import GaleriaFotosLocalizacion from "./GaleriaFotosLocalizacion";
 import AsignarProyectoLocalizacion from "./AsignarProyectoLocalizacion";
 import MapaLocalizacionesCliente from "./MapaLocalizacionesCliente";
 import { crearProyecto } from "../actions/crearProyecto";
+import { actualizarLogisticaLocalizacion } from "../actions/logisticaLocalizacion";
+import CalculadoraReservaEspacio from "./CalculadoraReservaEspacio";
+import {
+  calcularMetrosLineales,
+  normalizarDatosLogistica,
+  parseDesgloseVehiculos,
+  type DatosLogistica,
+  type DesgloseVehiculos,
+} from "@/lib/logistica-localizacion";
 
 interface ContactoLocalizacion {
   id: string;
@@ -103,6 +113,11 @@ interface Localizacion {
   aseosDisponibles: boolean;
   galiboCamionesM: number | null;
   espacioBaseProd: boolean;
+  metrosLineales: number | null;
+  desgloseVehiculos: unknown;
+  tipoEstacionamiento: string | null;
+  afeccionTrafico: string | null;
+  notasPermisos: string | null;
   nivelRuidoDb: number | null;
   orientacionLuz: string | null;
   esZbe: boolean;
@@ -1238,6 +1253,12 @@ export default function ExploradorLocalizaciones({
                 </dl>
               </section>
 
+              <EditorLogisticaLocalizacion
+                key={localizacionActiva.id}
+                localizacion={localizacionActiva}
+                puedeEditar={puedeGestionar}
+              />
+
               <section className="border-t border-[#e1e4dd] pt-5">
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Luz y sonido</h3>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
@@ -1694,7 +1715,22 @@ function DossierScouting({ localizaciones }: { localizaciones: Localizacion[] })
         <footer>LocaMad · Fichas técnicas y datos para scouting</footer>
       </section>
 
-      {localizaciones.map((localizacion, indice) => (
+      {localizaciones.map((localizacion, indice) => {
+        const desglose = parseDesgloseVehiculos(localizacion.desgloseVehiculos);
+        const logistica = normalizarDatosLogistica(localizacion);
+        const metrosLineales =
+          localizacion.metrosLineales ??
+          (desglose ? calcularMetrosLineales(desglose) : null);
+        const vehiculos: Array<[keyof DesgloseVehiculos, string]> = [
+          ["camionesLuces", "Camiones de luces"],
+          ["camionesGripo", "Camiones grúa / equipo"],
+          ["grupoElectrogeno", "Grupos electrógenos sobre camión"],
+          ["trailersVestuario", "Tráileres de vestuario / maquillaje"],
+          ["furgonetas", "Furgonetas técnicas"],
+          ["espaciosSeguridad", "Espacios de seguridad / maniobra"],
+        ];
+
+        return (
         <article className="locamad-dossier-location" key={localizacion.id}>
           <header className="locamad-dossier-header">
             <strong>LOCAMAD</strong>
@@ -1755,6 +1791,35 @@ function DossierScouting({ localizaciones }: { localizaciones: Localizacion[] })
             <div><dt>Azimut solar aprox. ahora</dt><dd>{obtenerAzimutSolar(localizacion.latitud, localizacion.longitud)}</dd></div>
           </dl>
 
+          <h3>Logística y Ocupación de Vía Pública</h3>
+          <dl className="locamad-dossier-grid">
+            <div>
+              <dt>Reserva estimada</dt>
+              <dd>{metrosLineales != null ? `${metrosLineales} m lineales` : "No estimada"}</dd>
+            </div>
+            <div>
+              <dt>Tipo de estacionamiento</dt>
+              <dd>{logistica.tipoEstacionamiento ?? "No especificado"}</dd>
+            </div>
+            <div>
+              <dt>Afección de tráfico / corte</dt>
+              <dd>{logistica.afeccionTrafico ?? "No especificada"}</dd>
+            </div>
+          </dl>
+          <ul className="locamad-dossier-notes">
+            {desglose && vehiculos.some(([key]) => desglose[key] > 0) ? (
+              vehiculos.filter(([key]) => desglose[key] > 0).map(([key, etiqueta]) => (
+                <li key={key}>{desglose[key]} × {etiqueta}</li>
+              ))
+            ) : (
+              <li>Sin vehículos registrados.</li>
+            )}
+          </ul>
+          <p className="locamad-dossier-note">
+            <strong>Requerimientos y observaciones para la solicitud municipal:</strong>{" "}
+            {logistica.notasPermisos || "Sin requerimientos especiales indicados."}
+          </p>
+
           <h3>Permisos y notas de producción</h3>
           {localizacion.permisos.length > 0 ? (
             <ul className="locamad-dossier-notes">
@@ -1789,7 +1854,59 @@ function DossierScouting({ localizaciones }: { localizaciones: Localizacion[] })
           </div>
           <footer className="locamad-dossier-footer">LocaMad · Documento de trabajo para producción</footer>
         </article>
-      ))}
+        );
+      })}
     </main>
+  );
+}
+
+function EditorLogisticaLocalizacion({
+  localizacion,
+  puedeEditar,
+}: {
+  localizacion: Localizacion;
+  puedeEditar: boolean;
+}) {
+  const router = useRouter();
+  const [datos, setDatos] = useState<DatosLogistica>(() => normalizarDatosLogistica(localizacion));
+  const [mensaje, setMensaje] = useState("");
+  const [guardando, iniciarGuardado] = useTransition();
+
+  const guardar = () => {
+    setMensaje("Guardando...");
+    iniciarGuardado(async () => {
+      try {
+        const resultado = await actualizarLogisticaLocalizacion(localizacion.id, datos);
+        setMensaje(resultado.message);
+        if (resultado.status === "success") router.refresh();
+      } catch (error) {
+        console.error("Could not save location logistics from the scouting panel.", error);
+        setMensaje("No se pudo guardar la logística de vía pública.");
+      }
+    });
+  };
+
+  return (
+    <section>
+      <CalculadoraReservaEspacio
+        disabled={!puedeEditar || guardando}
+        onChange={setDatos}
+        value={datos}
+      />
+      {puedeEditar && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <p aria-live="polite" className="text-[11px] text-[#737a71]">{mensaje}</p>
+          <button
+            className="inline-flex h-9 items-center gap-2 bg-[#315d48] px-3 text-xs font-semibold text-white hover:bg-[#244b38] disabled:cursor-wait disabled:opacity-60"
+            disabled={guardando}
+            onClick={guardar}
+            type="button"
+          >
+            {guardando ? <LoaderCircle className="animate-spin" size={14} /> : <Save size={14} />}
+            {guardando ? "Guardando..." : "Guardar logística"}
+          </button>
+        </div>
+      )}
+    </section>
   );
 }

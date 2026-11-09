@@ -6,6 +6,11 @@ import { Crosshair, LoaderCircle, MapPin, Save, X } from "lucide-react";
 import { crearLocalizacion } from "../actions/crearLocalizacion";
 import type { CoordenadasPunto } from "./MapaPuntoLocalizacion";
 import SelectorFotos from "./SelectorFotos";
+import CalculadoraReservaEspacio from "./CalculadoraReservaEspacio";
+import {
+  crearDatosLogisticaIniciales,
+  type DatosLogistica,
+} from "@/lib/logistica-localizacion";
 
 const MapaPuntoLocalizacion = dynamic(() => import("./MapaPuntoLocalizacion"), {
   ssr: false,
@@ -31,6 +36,7 @@ export default function NuevaLocalizacionModal({
   const [errorGeocodificacion, setErrorGeocodificacion] = useState("");
   const [fotos, setFotos] = useState<string[]>([]);
   const [subiendoFotos, setSubiendoFotos] = useState(false);
+  const [logistica, setLogistica] = useState<DatosLogistica>(crearDatosLogisticaIniciales);
 
   const ubicarDireccion = async () => {
     if (!formRef.current) return;
@@ -149,6 +155,10 @@ export default function NuevaLocalizacionModal({
 
         <form action={formAction} className="flex min-h-0 flex-1 flex-col" ref={formRef}>
           <input name="fotos" type="hidden" value={JSON.stringify(fotos)} />
+          <input name="desgloseVehiculos" type="hidden" value={JSON.stringify(logistica.desgloseVehiculos)} />
+          <input name="tipoEstacionamiento" type="hidden" value={logistica.tipoEstacionamiento ?? ""} />
+          <input name="afeccionTrafico" type="hidden" value={logistica.afeccionTrafico ?? ""} />
+          <input name="notasPermisos" type="hidden" value={logistica.notasPermisos} />
           <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-7">
             <section>
               <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Dirección y geolocalización</h3>
@@ -250,6 +260,8 @@ export default function NuevaLocalizacionModal({
                 <CheckFormulario label="Toma de agua disponible" name="tomaAgua" />
               </div>
             </section>
+
+            <CalculadoraReservaEspacio defaultOpen onChange={setLogistica} value={logistica} />
 
             <section className="border-t border-[#e1e4dd] pt-5">
               <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Contacto y acometida</h3>

@@ -119,6 +119,13 @@ model Localizacion {
   galiboCamionesM     Float?
   espacioBaseProd     Boolean @default(false)
 
+  // Ocupación de vía pública
+  metrosLineales      Int?
+  desgloseVehiculos   Json?
+  tipoEstacionamiento String?
+  afeccionTrafico     String?
+  notasPermisos       String?
+
   // Acústica y luz
   nivelRuidoDb   Int?
   orientacionLuz String? // Norte, Sur, Este, Oeste
