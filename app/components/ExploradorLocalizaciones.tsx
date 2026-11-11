@@ -338,7 +338,10 @@ export default function ExploradorLocalizaciones({
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        localizacionEnfocadaRef.current = "gps-posicion-usuario";
         setPosicionGps(coords);
+        setLocalizacionEnfocadaId("gps-posicion-usuario");
+        setVistaMovil("mapa");
         setObteniendoGps(false);
         setNotificacion("Ubicación GPS fijada en el mapa.");
         setSolicitudFocoMapa((s) => s + 1);
@@ -718,7 +721,7 @@ export default function ExploradorLocalizaciones({
   };
 
   return (
-    <div className="min-h-screen bg-[#f2f3ef] text-[#20251f] pb-16 lg:pb-0">
+    <div className="min-h-screen bg-[#f2f3ef] text-[#20251f] pb-[calc(4rem+env(safe-area-inset-bottom,0px))] lg:pb-0">
       {/* Input de cámara nativo oculto para disparar foto en campo */}
       <input
         accept="image/*"
@@ -829,7 +832,7 @@ export default function ExploradorLocalizaciones({
         </div>
       </header>
 
-      <main className="mx-auto grid min-h-[calc(100vh-68px-64px)] lg:min-h-[calc(100vh-68px)] max-w-[1800px] grid-cols-1 lg:grid-cols-[minmax(400px,0.82fr)_minmax(0,1.18fr)]">
+      <main className="mx-auto grid min-h-[calc(100vh-68px-4rem-env(safe-area-inset-bottom,0px))] lg:min-h-[calc(100vh-68px)] max-w-[1800px] grid-cols-1 lg:grid-cols-[minmax(400px,0.82fr)_minmax(0,1.18fr)]">
         {/* Sección de Catálogo / Filtros: Visible en desktop o si en móvil se pulsa 'Lista' */}
         <section className={`${vistaMovil === "lista" ? "flex" : "hidden lg:flex"} min-h-[500px] flex-col border-r border-[#dfe2db] bg-[#f8f9f6] lg:h-[calc(100vh-68px)] lg:min-h-0 lg:overflow-hidden`}>
           <div className="shrink-0 border-b border-[#e3e6df] px-5 pb-4 pt-6 sm:px-7 lg:max-h-[64vh] lg:overflow-y-auto">
@@ -1229,7 +1232,7 @@ export default function ExploradorLocalizaciones({
         </section>
 
         {/* Sección de Mapa: Visible en desktop o si en móvil se pulsa 'Mapa' */}
-        <section aria-label="Mapa de localizaciones" className={`${vistaMovil === "mapa" ? "flex" : "hidden lg:flex"} relative h-[calc(100vh-68px-64px)] lg:h-[calc(100vh-68px)] flex-col bg-[#e7e9e3]`}>
+        <section aria-label="Mapa de localizaciones" className={`${vistaMovil === "mapa" ? "flex" : "hidden lg:flex"} relative h-[calc(100vh-68px-4rem-env(safe-area-inset-bottom,0px))] min-h-0 flex-col overflow-hidden bg-[#e7e9e3] lg:h-[calc(100vh-68px)]`}>
           {/* Indicador superior del mapa */}
           <div className="absolute left-4 top-4 z-[400] flex items-center gap-2 border border-[#dfe2db] bg-white/95 px-3 py-1.5 shadow-sm backdrop-blur-sm sm:left-6 sm:top-6">
             <span className="size-2 rounded-full bg-[#4b8c68]" />
@@ -1265,7 +1268,7 @@ export default function ExploradorLocalizaciones({
             </button>
           </div>
 
-          <div className="size-full flex-1">
+          <div className="min-h-0 w-full flex-1 overflow-hidden">
             <MapaLocalizacionesCliente
               activeId={localizacionActivaId}
               focusedId={localizacionEnfocadaId}
@@ -1281,7 +1284,7 @@ export default function ExploradorLocalizaciones({
 
       {/* Ficha técnica adaptativa: Bottom Sheet deslizable en móvil / Panel lateral en escritorio */}
       {localizacionActiva && (
-        <div className="locamad-detail-overlay fixed inset-0 z-[1000] flex items-end justify-center bg-[#17201b]/50 lg:items-stretch lg:justify-end" role="presentation">
+        <div className="locamad-detail-overlay fixed inset-x-0 top-0 bottom-[calc(4rem+env(safe-area-inset-bottom,0px))] z-[1000] flex items-end justify-center bg-[#17201b]/50 lg:inset-0 lg:items-stretch lg:justify-end" role="presentation">
           <button
             className="locamad-no-print absolute inset-0 size-full cursor-default"
             aria-label="Cerrar ficha"
@@ -1292,13 +1295,17 @@ export default function ExploradorLocalizaciones({
           <aside
             aria-labelledby="ficha-titulo"
             aria-modal="true"
-            className="locamad-detail-panel relative z-10 flex h-[88vh] w-full flex-col overflow-y-auto rounded-t-2xl border-t border-[#dfe2db] bg-[#f8f9f6] shadow-2xl lg:h-full lg:max-w-[490px] lg:rounded-none lg:border-l lg:border-t-0"
+            className="locamad-detail-panel relative z-10 flex h-[88%] max-h-full w-full flex-col overflow-y-auto rounded-t-2xl border-t border-[#dfe2db] bg-[#f8f9f6] shadow-2xl lg:h-full lg:max-w-[490px] lg:rounded-none lg:border-l lg:border-t-0"
             role="dialog"
           >
-            {/* Tirador táctil visual superior para móvil (Drag Handle) */}
-            <div className="flex w-full items-center justify-center pt-2.5 pb-1 lg:hidden">
+            <button
+              aria-label="Cerrar ficha"
+              className="locamad-no-print flex w-full items-center justify-center pt-2.5 pb-2 lg:hidden"
+              onClick={() => setLocalizacionActivaId(null)}
+              type="button"
+            >
               <span className="h-1.5 w-12 rounded-full bg-[#cfd5cb]" />
-            </div>
+            </button>
 
             <div className="border-b border-[#e1e4dd] bg-white px-5 pb-5 pt-3 sm:px-7">
               <div className="flex items-start justify-between gap-4">
@@ -1349,7 +1356,7 @@ export default function ExploradorLocalizaciones({
               <CarruselFotos fotos={localizacionActiva.fotos} nombre={localizacionActiva.nombre} />
             </div>
 
-            <div className="space-y-5 px-5 py-5 sm:px-7 pb-24 lg:pb-7">
+            <div className="space-y-5 px-5 py-5 pb-7 sm:px-7">
               <section>
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Espacio</h3>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
@@ -1574,9 +1581,9 @@ export default function ExploradorLocalizaciones({
       )}
 
       {/* Barra de navegación inferior móvil fija (Bottom Navigation Bar) */}
-      <nav aria-label="Navegación móvil" className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-[#294236] bg-[#142921] px-2 text-white shadow-2xl lg:hidden">
+      <nav aria-label="Navegación móvil" className="fixed bottom-0 left-0 right-0 z-50 flex items-stretch justify-around border-t border-[#294236] bg-[#142921] px-2 pb-[env(safe-area-inset-bottom,0px)] text-white shadow-2xl lg:hidden">
         <button
-          className={`flex flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium transition-colors ${
+          className={`flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium transition-colors ${
             vistaMovil === "mapa" ? "text-emerald-400 font-bold" : "text-neutral-400 hover:text-white"
           }`}
           onClick={() => {
@@ -1590,7 +1597,7 @@ export default function ExploradorLocalizaciones({
         </button>
 
         <button
-          className={`flex flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium transition-colors ${
+          className={`flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium transition-colors ${
             vistaMovil === "lista" ? "text-emerald-400 font-bold" : "text-neutral-400 hover:text-white"
           }`}
           onClick={() => {
@@ -1605,7 +1612,7 @@ export default function ExploradorLocalizaciones({
 
         {puedeGestionar && (
           <button
-            className="flex flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold text-emerald-400 active:scale-95 transition-transform"
+            className="flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold text-emerald-400 active:scale-95 transition-transform"
             onClick={() => setModalNuevaLocalizacion(true)}
             type="button"
           >
@@ -1617,7 +1624,7 @@ export default function ExploradorLocalizaciones({
         )}
 
         <button
-          className="flex flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium text-neutral-400 hover:text-white"
+          className="flex min-h-16 flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium text-neutral-400 hover:text-white"
           onClick={activarGpsEnCampo}
           type="button"
         >
@@ -1641,7 +1648,7 @@ export default function ExploradorLocalizaciones({
       )}
 
       {notificacion && (
-        <div className="fixed bottom-20 lg:bottom-5 right-5 z-[1200] flex max-w-[calc(100vw-2.5rem)] items-center gap-3 border border-[#b8d2bf] bg-white px-4 py-3 text-sm text-[#285c3e] shadow-xl" role="status">
+        <div className="fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-5 z-[1200] flex max-w-[calc(100vw-2.5rem)] items-center gap-3 border border-[#b8d2bf] bg-white px-4 py-3 text-sm text-[#285c3e] shadow-xl lg:bottom-5" role="status">
           <CircleCheck size={18} className="shrink-0" />
           <span>{notificacion}</span>
           <button aria-label="Cerrar notificación" className="ml-2 text-[#627266] hover:text-[#20251f]" onClick={() => setNotificacion("")} type="button">

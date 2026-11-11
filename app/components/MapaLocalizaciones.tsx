@@ -161,7 +161,9 @@ export default function MapaLocalizaciones({
     const activa = itemEnfocado ?? itemActivo;
     const marcadorActivo = idEnfocado ? markersRef.current.get(idEnfocado) : null;
     if (activa && marcadorActivo) {
-      map.flyTo([activa.latitud, activa.longitud], Math.max(map.getZoom(), 14), {
+      map.invalidateSize();
+      const zoom = activa.id === "gps-posicion-usuario" ? 17 : Math.max(map.getZoom(), 14);
+      map.flyTo([activa.latitud, activa.longitud], zoom, {
         animate: true,
         duration: 0.6,
       });
@@ -172,7 +174,7 @@ export default function MapaLocalizaciones({
   return (
     <div
       ref={mapContainerRef}
-      className="w-full h-full min-h-[500px] rounded-xl border border-slate-200 shadow-inner z-0"
+      className="z-0 h-full min-h-0 w-full rounded-xl border border-slate-200 shadow-inner"
     />
   );
 }
