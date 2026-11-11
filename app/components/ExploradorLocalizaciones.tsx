@@ -18,17 +18,22 @@ import { nombreRol, puedeGestionarLocalizaciones } from "@/lib/roles";
 import {
   ArrowUpRight,
   Building2,
+  Camera,
   Check,
   CircleCheck,
   CircleHelp,
   Compass,
+  Crosshair,
   Download,
   Droplets,
   ExternalLink,
   Globe2,
+  Layers,
+  List as ListIcon,
   LogOut,
   LoaderCircle,
   Mail,
+  Map as MapIcon,
   MapPin,
   Plus,
   Phone,
@@ -36,6 +41,7 @@ import {
   Route,
   Search,
   Save,
+  SlidersHorizontal,
   Sun,
   Truck,
   Volume2,
@@ -252,6 +258,14 @@ export default function ExploradorLocalizaciones({
 }) {
   const router = useRouter();
   const puedeGestionar = puedeGestionarLocalizaciones(usuario?.rol);
+
+  // Estados de vista móvil y utilidades en campo
+  const [vistaMovil, setVistaMovil] = useState<"mapa" | "lista">("mapa");
+  const [mostrarFiltrosMovil, setMostrarFiltrosMovil] = useState(false);
+  const [posicionGps, setPosicionGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [obteniendoGps, setObteniendoGps] = useState(false);
+  const camaraInputRef = useRef<HTMLInputElement | null>(null);
+
   const [camionesPesados, setCamionesPesados] = useState(0);
   const [camionesMedios, setCamionesMedios] = useState(0);
   const [furgonetas, setFurgonetas] = useState(0);
@@ -313,6 +327,29 @@ export default function ExploradorLocalizaciones({
     setLocalizacionResaltadaId(id);
     setSolicitudFocoMapa((solicitud) => solicitud + 1);
   }, [enfocarLocalizacion]);
+
+  // Manejador de geolocalización GPS
+  const activarGpsEnCampo = () => {
+    if (!navigator.geolocation) {
+      setNotificacion("Tu dispositivo no soporta geolocalización.");
+      return;
+    }
+    setObteniendoGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setPosicionGps(coords);
+        setObteniendoGps(false);
+        setNotificacion("Ubicación GPS fijada en el mapa.");
+        setSolicitudFocoMapa((s) => s + 1);
+      },
+      (error) => {
+        setObteniendoGps(false);
+        setNotificacion(`Error GPS: ${error.message}`);
+      },
+      { enableHighAccuracy: true, timeout: 12000 },
+    );
+  };
 
   useEffect(() => {
     const query = busqueda.trim();
@@ -454,6 +491,7 @@ export default function ExploradorLocalizaciones({
     () => localizacionesCatalogo.find((localizacion) => localizacion.id === localizacionActivaId),
     [localizacionesCatalogo, localizacionActivaId],
   );
+
   useEffect(() => {
     if (!localizacionActiva) return;
     const desglose = parseDesgloseVehiculos(localizacionActiva.desgloseVehiculos);
@@ -496,8 +534,9 @@ export default function ExploradorLocalizaciones({
     () => localizacionesCatalogo.filter((localizacion) => localizacion.espacioBaseProd).length,
     [localizacionesCatalogo],
   );
-  const elementosMapa = useMemo(
-    () => filtradas.map((localizacion) => ({
+
+  const elementosMapa = useMemo(() => {
+    const elementos = filtradas.map((localizacion) => ({
       id: localizacion.id,
       nombre: localizacion.nombre,
       latitud: localizacion.latitud,
@@ -512,9 +551,25 @@ export default function ExploradorLocalizaciones({
           ? localizacion.asignaciones[0]
           : localizacion.asignaciones.find((asignacion) => asignacion.proyectoId === proyectoActivoId)
       )?.estadoScouting ?? null,
-    })),
-    [filtradas, proyectoActivoId],
-  );
+    }));
+
+    if (posicionGps) {
+      elementos.push({
+        id: "gps-posicion-usuario",
+        nombre: "📍 Tu ubicación actual (GPS)",
+        latitud: posicionGps.lat,
+        longitud: posicionGps.lng,
+        esZbedepCentro: false,
+        esZbe: false,
+        distritoBarrio: "En campo",
+        tipoEspacio: "Posición actual",
+        fotoPortada: "",
+        estadoProyecto: "CONFIRMADA",
+      });
+    }
+
+    return elementos;
+  }, [filtradas, posicionGps, proyectoActivoId]);
 
   useEffect(() => {
     if (!localizacionEnfocadaId) return;
@@ -663,7 +718,22 @@ export default function ExploradorLocalizaciones({
   };
 
   return (
-    <div className="min-h-screen bg-[#f2f3ef] text-[#20251f]">
+    <div className="min-h-screen bg-[#f2f3ef] text-[#20251f] pb-16 lg:pb-0">
+      {/* Input de cámara nativo oculto para disparar foto en campo */}
+      <input
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            setNotificacion(`Foto tomada: "${file.name}". Lista para adjuntar.`);
+          }
+        }}
+        ref={camaraInputRef}
+        type="file"
+      />
+
       <header className="flex h-[68px] items-center justify-between border-b border-[#dfe2db] bg-white px-4 sm:px-8">
         <div className="flex items-center gap-3">
           <div className="grid size-9 place-items-center rounded-lg bg-[#183d32] text-white">
@@ -696,7 +766,7 @@ export default function ExploradorLocalizaciones({
           </label>
           <button
             aria-label="Descargar CSV"
-            className="flex h-9 items-center gap-1.5 whitespace-nowrap border border-[#dfe3db] bg-white px-2.5 text-[11px] font-semibold text-[#465344] transition-colors hover:bg-[#f5f6f3] disabled:cursor-not-allowed disabled:opacity-45 sm:gap-2 sm:px-3 sm:text-xs"
+            className="hidden sm:flex h-9 items-center gap-1.5 whitespace-nowrap border border-[#dfe3db] bg-white px-2.5 text-[11px] font-semibold text-[#465344] transition-colors hover:bg-[#f5f6f3] disabled:cursor-not-allowed disabled:opacity-45 sm:gap-2 sm:px-3 sm:text-xs"
             disabled={proyectoActivoId === "todos"}
             onClick={descargarCsvProyecto}
             title={proyectoActivoId === "todos" ? "Selecciona un proyecto para exportar" : "Descargar localizaciones del proyecto"}
@@ -705,7 +775,7 @@ export default function ExploradorLocalizaciones({
             <Download size={15} /> Descargar CSV
           </button>
           <button
-            className="flex h-9 max-w-[260px] shrink-0 items-center gap-1.5 bg-[#315d48] px-3 text-left text-[10px] font-semibold leading-tight text-white transition-colors hover:bg-[#244b39] disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:text-xs"
+            className="hidden sm:flex h-9 max-w-[260px] shrink-0 items-center gap-1.5 bg-[#315d48] px-3 text-left text-[10px] font-semibold leading-tight text-white transition-colors hover:bg-[#244b39] disabled:cursor-not-allowed disabled:opacity-50 sm:gap-2 sm:text-xs"
             disabled={localizacionesSeleccionadas.length === 0}
             onClick={() => {
               const seleccionadas = localizacionesCatalogo.filter((localizacion) =>
@@ -716,11 +786,11 @@ export default function ExploradorLocalizaciones({
             type="button"
           >
             <Printer size={14} />
-            <span>Generar Dossier de Scouting ({localizacionesSeleccionadas.length} seleccionadas)</span>
+            <span>Dossier ({localizacionesSeleccionadas.length})</span>
           </button>
           {puedeGestionar && (
             <button
-              className="flex h-9 items-center gap-1.5 whitespace-nowrap border border-[#1769aa] bg-white px-2.5 text-[11px] font-semibold text-[#1769aa] transition-colors hover:bg-[#edf5fb] sm:gap-2 sm:px-3 sm:text-xs"
+              className="hidden md:flex h-9 items-center gap-1.5 whitespace-nowrap border border-[#1769aa] bg-white px-2.5 text-[11px] font-semibold text-[#1769aa] transition-colors hover:bg-[#edf5fb] sm:gap-2 sm:px-3 sm:text-xs"
               onClick={() => setModalNuevoProyecto(true)}
               type="button"
             >
@@ -735,7 +805,7 @@ export default function ExploradorLocalizaciones({
           )}
           {puedeGestionar && (
             <button
-              className="flex h-9 items-center gap-1.5 whitespace-nowrap bg-[#1769aa] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#12558b] sm:gap-2 sm:px-4 sm:text-sm"
+              className="hidden sm:flex h-9 items-center gap-1.5 whitespace-nowrap bg-[#1769aa] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#12558b] sm:gap-2 sm:px-4 sm:text-sm"
               onClick={() => setModalNuevaLocalizacion(true)}
               type="button"
             >
@@ -745,25 +815,23 @@ export default function ExploradorLocalizaciones({
           {usuario ? (
             <button
               aria-label="Cerrar sesión"
-              className="flex h-9 items-center gap-2 border border-[#e1e4dd] px-3 text-xs font-medium text-[#596158] hover:bg-[#f5f6f3]"
+              className="flex h-9 items-center gap-2 border border-[#e1e4dd] px-2.5 sm:px-3 text-xs font-medium text-[#596158] hover:bg-[#f5f6f3]"
               onClick={() => void signOut({ callbackUrl: "/login" })}
               type="button"
             >
-              <LogOut size={15} /> <span className="hidden sm:inline">Cerrar sesión</span>
+              <LogOut size={15} /> <span className="hidden sm:inline">Cerrar</span>
             </button>
           ) : (
             <Link className="flex h-9 items-center border border-[#e1e4dd] px-3 text-xs font-medium text-[#596158] hover:bg-[#f5f6f3]" href="/login">
               Iniciar sesión
             </Link>
           )}
-          <button aria-label="Ayuda" className="grid size-9 place-items-center rounded-md border border-[#e1e4dd] text-[#596158] hover:bg-[#f5f6f3]">
-            <CircleHelp size={17} />
-          </button>
         </div>
       </header>
 
-      <main className="mx-auto grid min-h-[calc(100vh-68px)] max-w-[1800px] grid-cols-1 lg:grid-cols-[minmax(400px,0.82fr)_minmax(0,1.18fr)]">
-        <section className="flex min-h-[560px] flex-col border-r border-[#dfe2db] bg-[#f8f9f6] lg:h-[calc(100vh-68px)] lg:min-h-0 lg:overflow-hidden">
+      <main className="mx-auto grid min-h-[calc(100vh-68px-64px)] lg:min-h-[calc(100vh-68px)] max-w-[1800px] grid-cols-1 lg:grid-cols-[minmax(400px,0.82fr)_minmax(0,1.18fr)]">
+        {/* Sección de Catálogo / Filtros: Visible en desktop o si en móvil se pulsa 'Lista' */}
+        <section className={`${vistaMovil === "lista" ? "flex" : "hidden lg:flex"} min-h-[500px] flex-col border-r border-[#dfe2db] bg-[#f8f9f6] lg:h-[calc(100vh-68px)] lg:min-h-0 lg:overflow-hidden`}>
           <div className="shrink-0 border-b border-[#e3e6df] px-5 pb-4 pt-6 sm:px-7 lg:max-h-[64vh] lg:overflow-y-auto">
             <div className="flex items-end justify-between gap-3">
               <div>
@@ -793,6 +861,7 @@ export default function ExploradorLocalizaciones({
               </div>
             </div>
 
+            {/* Panel de búsqueda con toggle para móvil */}
             <div
               aria-label="Buscador global de localizaciones"
               className="mt-4 border border-[#dfe3db] bg-white p-3.5"
@@ -844,7 +913,7 @@ export default function ExploradorLocalizaciones({
                 <div className="grid grid-cols-3 border border-[#e1e4dc]">
                   {([
                     ["todo", "Todo"],
-                    ["catalogo", "En mi catálogo"],
+                    ["catalogo", "En catálogo"],
                     ["internet", "En internet"],
                   ] as const).map(([ambito, etiqueta]) => (
                     <button
@@ -915,9 +984,9 @@ export default function ExploradorLocalizaciones({
                 }}
                 type="button"
               >
-                <Building2 size={14} /> Base de producción
+                <Building2 size={14} /> Base prod.
               </button>
-              <label className="flex h-9 min-w-[148px] flex-1 items-center gap-2 border border-[#dfe3db] bg-white px-2.5 text-[#687166] focus-within:border-[#718a72]">
+              <label className="flex h-9 min-w-[130px] flex-1 items-center gap-2 border border-[#dfe3db] bg-white px-2.5 text-[#687166] focus-within:border-[#718a72]">
                 <Zap size={14} className="shrink-0 text-[#b68a3a]" />
                 <span className="shrink-0 text-[11px]">Mín.</span>
                 <input
@@ -938,7 +1007,7 @@ export default function ExploradorLocalizaciones({
             </div>
           </div>
 
-          <div aria-label="Resultados de localizaciones" className="min-h-[240px] max-h-[calc(100vh-380px)] flex-1 overflow-y-auto px-4 py-4 sm:px-5 lg:min-h-0 lg:max-h-none">
+          <div aria-label="Resultados de localizaciones" className="min-h-[240px] flex-1 overflow-y-auto px-4 py-4 sm:px-5">
             {ambitoBusqueda !== "catalogo" && busqueda.trim() && (
               <section aria-labelledby="resultados-internet-titulo" className="mb-3 border border-[#dfe3db] bg-white p-3">
                 <h2 className="text-xs font-bold text-[#315d48]" id="resultados-internet-titulo">
@@ -981,9 +1050,6 @@ export default function ExploradorLocalizaciones({
                               } disabled:opacity-70`}
                               disabled={!puedeGestionar || añadido || guardando}
                               onClick={() => void añadirAlCatalogo(lugar)}
-                              title={puedeGestionar
-                                ? undefined
-                                : "Inicia sesión con un rol autorizado para añadir localizaciones."}
                               type="button"
                             >
                               {guardando ? <LoaderCircle className="animate-spin" size={13} /> : añadido ? <Check size={13} /> : <Plus size={13} />}
@@ -1020,191 +1086,202 @@ export default function ExploradorLocalizaciones({
             {ambitoBusqueda !== "internet" && (
               filtradas.length === 0 &&
               (ambitoBusqueda === "catalogo" || (!buscando && resultadosInternet.length === 0)) ? (
-              <div className="grid min-h-48 place-items-center border border-dashed border-[#cfd5cb] bg-white p-8 text-center">
-                <div>
-                  <MapPin className="mx-auto text-[#8b9788]" size={22} />
-                  <p className="mt-3 text-sm font-medium">No hay resultados</p>
-                  <p className="mt-1 text-xs text-[#7b8179]">Prueba a cambiar los filtros de búsqueda.</p>
-                  <button
-                    className="mt-3 text-xs font-semibold text-[#315d48] underline underline-offset-2"
-                    onClick={() => {
-                      setBusqueda("");
-                      setSoloZbedep(false);
-                      setSoloBase(false);
-                      setPotenciaMinima("");
-                      setProyectoActivoId("todos");
-                      setFiltroProduccionActivo(null);
-                      setLocalizacionActivaId(null);
-                    }}
-                    type="button"
-                  >
-                    Limpiar filtros
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {filtradas.map((localizacion, index) => {
-                  const activa = localizacion.id === localizacionActivaId;
-                  const asignacionActiva = proyectoActivoId === "todos"
-                    ? localizacion.asignaciones[0]
-                    : localizacion.asignaciones.find(
-                      (asignacion) => asignacion.proyectoId === proyectoActivoId,
-                    );
-                  return (
-                    <article
-                      aria-current={activa ? "true" : undefined}
-                      aria-label={`Abrir ficha técnica de ${localizacion.nombre}`}
-                      className={`group block w-full cursor-pointer border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1769aa] ${
-                        activa
-                          ? "border-[#315d48] bg-[#f0f5ef] ring-1 ring-[#315d48]"
-                          : localizacionResaltadaId === localizacion.id
-                            ? "animate-pulse border-[#b65337] bg-[#fff7f2] ring-2 ring-[#b65337]"
-                            : "border-[#e1e4dd] bg-white hover:border-[#9eac9d]"
-                      }`}
-                      id={`localizacion-${localizacion.id}`}
-                      key={localizacion.id}
-                      onClick={() => seleccionarLocalizacion(localizacion.id)}
-                      onMouseEnter={() => enfocarLocalizacion(localizacion.id)}
-                      onFocus={() => enfocarLocalizacion(localizacion.id)}
-                      onKeyDown={(event) => {
-                        if (
-                          event.target === event.currentTarget &&
-                          (event.key === "Enter" || event.key === " ")
-                        ) {
-                          event.preventDefault();
-                          seleccionarLocalizacion(localizacion.id);
-                        }
+                <div className="grid min-h-48 place-items-center border border-dashed border-[#cfd5cb] bg-white p-8 text-center">
+                  <div>
+                    <MapPin className="mx-auto text-[#8b9788]" size={22} />
+                    <p className="mt-3 text-sm font-medium">No hay resultados</p>
+                    <p className="mt-1 text-xs text-[#7b8179]">Prueba a cambiar los filtros de búsqueda.</p>
+                    <button
+                      className="mt-3 text-xs font-semibold text-[#315d48] underline underline-offset-2"
+                      onClick={() => {
+                        setBusqueda("");
+                        setSoloZbedep(false);
+                        setSoloBase(false);
+                        setPotenciaMinima("");
+                        setProyectoActivoId("todos");
+                        setFiltroProduccionActivo(null);
+                        setLocalizacionActivaId(null);
                       }}
-                      tabIndex={0}
+                      type="button"
                     >
-                      <span className="flex items-start justify-between gap-3">
-                        <span className="flex min-w-0 gap-3">
-                          <input
-                            aria-label={`Añadir ${localizacion.nombre} al dossier`}
-                            checked={localizacionesSeleccionadas.includes(localizacion.id)}
-                            className="mt-2 size-4 shrink-0 accent-[#315d48]"
-                            onChange={(event) => {
-                              setLocalizacionesSeleccionadas((seleccionadas) =>
-                                event.target.checked
-                                  ? [...seleccionadas, localizacion.id]
-                                  : seleccionadas.filter((id) => id !== localizacion.id),
-                              );
-                            }}
-                            onClick={(event) => event.stopPropagation()}
-                            type="checkbox"
-                          />
-                          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-[#edf1ea] font-mono text-[11px] font-semibold text-[#4c654b]">
-                            {String(index + 1).padStart(2, "0")}
+                      Limpiar filtros
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {filtradas.map((localizacion, index) => {
+                    const activa = localizacion.id === localizacionActivaId;
+                    const asignacionActiva = proyectoActivoId === "todos"
+                      ? localizacion.asignaciones[0]
+                      : localizacion.asignaciones.find(
+                        (asignacion) => asignacion.proyectoId === proyectoActivoId,
+                      );
+                    return (
+                      <article
+                        aria-current={activa ? "true" : undefined}
+                        aria-label={`Abrir ficha técnica de ${localizacion.nombre}`}
+                        className={`group block w-full cursor-pointer border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1769aa] ${
+                          activa
+                            ? "border-[#315d48] bg-[#f0f5ef] ring-1 ring-[#315d48]"
+                            : localizacionResaltadaId === localizacion.id
+                              ? "animate-pulse border-[#b65337] bg-[#fff7f2] ring-2 ring-[#b65337]"
+                              : "border-[#e1e4dd] bg-white hover:border-[#9eac9d]"
+                        }`}
+                        id={`localizacion-${localizacion.id}`}
+                        key={localizacion.id}
+                        onClick={() => seleccionarLocalizacion(localizacion.id)}
+                        onMouseEnter={() => enfocarLocalizacion(localizacion.id)}
+                        onFocus={() => enfocarLocalizacion(localizacion.id)}
+                        tabIndex={0}
+                      >
+                        <span className="flex items-start justify-between gap-3">
+                          <span className="flex min-w-0 gap-3">
+                            <input
+                              aria-label={`Añadir ${localizacion.nombre} al dossier`}
+                              checked={localizacionesSeleccionadas.includes(localizacion.id)}
+                              className="mt-2 size-4 shrink-0 accent-[#315d48]"
+                              onChange={(event) => {
+                                setLocalizacionesSeleccionadas((seleccionadas) =>
+                                  event.target.checked
+                                    ? [...seleccionadas, localizacion.id]
+                                    : seleccionadas.filter((id) => id !== localizacion.id),
+                                );
+                              }}
+                              onClick={(event) => event.stopPropagation()}
+                              type="checkbox"
+                            />
+                            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-md bg-[#edf1ea] font-mono text-[11px] font-semibold text-[#4c654b]">
+                              {String(index + 1).padStart(2, "0")}
+                            </span>
+                            {localizacion.fotos[0] && (
+                              <span className="relative mt-0.5 size-16 shrink-0 overflow-hidden border border-[#e1e4dd] bg-[#edf1ea]">
+                                <Image
+                                  alt={`Foto de portada: ${localizacion.nombre}`}
+                                  className="object-cover"
+                                  fill
+                                  sizes="64px"
+                                  src={localizacion.fotos[0]}
+                                  unoptimized
+                                />
+                              </span>
+                            )}
+                            <span className="min-w-0">
+                              <span className="line-clamp-1 block text-sm font-semibold leading-5">{localizacion.nombre}</span>
+                              <span className="mt-1 line-clamp-1 block text-xs text-[#747b72]">
+                                {localizacion.tipoEspacio}{localizacion.estilo ? ` · ${localizacion.estilo}` : ""}
+                              </span>
+                              <span className="mt-1.5 flex items-center gap-1 text-[11px] text-[#858b82]">
+                                <MapPin size={12} />
+                                {localizacion.distritoBarrio || localizacion.municipio} · {localizacion.direccion}
+                              </span>
+                            </span>
                           </span>
-                          {localizacion.fotos[0] && (
-                            <span className="relative mt-0.5 size-16 shrink-0 overflow-hidden border border-[#e1e4dd] bg-[#edf1ea]">
-                              <Image
-                                alt={`Foto de portada: ${localizacion.nombre}`}
-                                className="object-cover"
-                                fill
-                                sizes="64px"
-                                src={localizacion.fotos[0]}
-                                unoptimized
-                              />
+                          <span className="shrink-0 bg-[#f0f2ed] px-2 py-1 text-[10px] font-medium text-[#5d675b]">
+                            {estadoLabel[localizacion.estado] ?? localizacion.estado}
+                          </span>
+                        </span>
+
+                        <span className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-[#edf0e9] pt-3 sm:grid-cols-4">
+                          <span className="flex items-center gap-1.5 text-[11px] text-[#596158]">
+                            <Zap size={13} className="text-[#b68a3a]" /> {localizacion.potenciaElectricaKw ?? "—"} kW
+                          </span>
+                          <span className="flex items-center gap-1.5 text-[11px] text-[#596158]">
+                            <Truck size={14} className="text-[#697d69]" />
+                            {localizacion.galiboCamionesM != null ? `${localizacion.galiboCamionesM} m gálibo` : "Gálibo —"}
+                          </span>
+                          <span className="flex items-center gap-1.5 text-[11px] text-[#596158]">
+                            <Building2 size={13} className="text-[#697d69]" />
+                            {localizacion.espacioBaseProd ? "Base prod." : "Sin base"}
+                          </span>
+                          <span className="flex items-center gap-1.5 text-[11px] text-[#596158]">
+                            <Check size={13} className="text-[#568365]" />
+                            {localizacion.tomaAgua ? "Agua disp." : "Sin agua"}
+                          </span>
+                        </span>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                          {localizacion.esZbedepCentro && <span className="bg-[#f9e9df] px-2 py-1 text-[10px] font-semibold text-[#a24e32]">ZBEDEP Centro</span>}
+                          {localizacion.esZbe && <span className="bg-[#f4f0dc] px-2 py-1 text-[10px] font-semibold text-[#826a2c]">ZBE Madrid</span>}
+                          {asignacionActiva && (
+                            <span className={`px-2 py-1 text-[10px] font-semibold ${colorEstadoProyecto(asignacionActiva.estadoScouting)}`}>
+                              {estadoProyectoLabel[asignacionActiva.estadoScouting] ?? asignacionActiva.estadoScouting}
                             </span>
                           )}
-                          <span className="min-w-0">
-                            <span className="line-clamp-1 block text-sm font-semibold leading-5">{localizacion.nombre}</span>
-                            <span className="mt-1 line-clamp-1 block text-xs text-[#747b72]">
-                              {localizacion.tipoEspacio}{localizacion.estilo ? ` · ${localizacion.estilo}` : ""}
-                            </span>
-                            <span className="mt-1.5 flex items-center gap-1 text-[11px] text-[#858b82]">
-                              <MapPin size={12} />
-                              {localizacion.distritoBarrio || localizacion.municipio} · {localizacion.direccion}
-                            </span>
-                          </span>
-                        </span>
-                        <span className="shrink-0 bg-[#f0f2ed] px-2 py-1 text-[10px] font-medium text-[#5d675b]">
-                          {estadoLabel[localizacion.estado] ?? localizacion.estado}
-                        </span>
-                      </span>
-
-                      <span className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-[#edf0e9] pt-3 sm:grid-cols-4">
-                        <span className="flex items-center gap-1.5 text-[11px] text-[#596158]">
-                          <Zap size={13} className="text-[#b68a3a]" /> {localizacion.potenciaElectricaKw ?? "—"} kW
-                        </span>
-                        <span className="flex items-center gap-1.5 text-[11px] text-[#596158]">
-                          <Truck size={14} className="text-[#697d69]" />
-                          {localizacion.galiboCamionesM != null ? `${localizacion.galiboCamionesM} m gálibo` : "Gálibo —"}
-                        </span>
-                        <span className="flex items-center gap-1.5 text-[11px] text-[#596158]">
-                          <Building2 size={13} className="text-[#697d69]" />
-                          {localizacion.espacioBaseProd ? "Base producción" : "Sin base"}
-                        </span>
-                        <span className="flex items-center gap-1.5 text-[11px] text-[#596158]">
-                          <Check size={13} className="text-[#568365]" />
-                          {localizacion.tomaAgua ? "Agua disponible" : "Sin toma de agua"}
-                        </span>
-                      </span>
-
-                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                        {localizacion.esZbedepCentro && <span className="bg-[#f9e9df] px-2 py-1 text-[10px] font-semibold text-[#a24e32]">ZBEDEP Centro</span>}
-                        {localizacion.esZbe && <span className="bg-[#f4f0dc] px-2 py-1 text-[10px] font-semibold text-[#826a2c]">ZBE Madrid</span>}
-                        {asignacionActiva && (
-                          <span className={`px-2 py-1 text-[10px] font-semibold ${colorEstadoProyecto(asignacionActiva.estadoScouting)}`}>
-                            {estadoProyectoLabel[asignacionActiva.estadoScouting] ?? asignacionActiva.estadoScouting}
-                          </span>
-                        )}
-                        <button
-                          className="ml-auto flex h-8 items-center gap-2 bg-[#1769aa] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#12558b]"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            seleccionarLocalizacion(localizacion.id);
-                          }}
-                          type="button"
-                        >
-                          Ver detalles <ArrowUpRight size={14} />
-                        </button>
-                      </div>
-                      {puedeGestionar && proyectos.length > 0 && (
-                        <AsignarProyectoLocalizacion
-                          localizacionId={localizacion.id}
-                          proyectos={proyectos}
-                          asignaciones={localizacion.asignaciones}
-                          proyectoActivoId={proyectoActivoId}
-                          compact
-                        />
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-            ))}
+                          <button
+                            className="ml-auto flex h-8 items-center gap-2 bg-[#1769aa] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#12558b]"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              seleccionarLocalizacion(localizacion.id);
+                            }}
+                            type="button"
+                          >
+                            Ver detalles <ArrowUpRight size={14} />
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )
+            )}
           </div>
-
-          <footer className="flex items-center justify-between border-t border-[#e1e4dd] px-5 py-3 text-[10px] text-[#828880] sm:px-7">
-            <span>Datos logísticos de producción</span>
-            <span>LOCAMAD / 2026</span>
-          </footer>
         </section>
 
-        <section aria-label="Mapa de localizaciones" className="relative min-h-[520px] bg-[#e7e9e3] lg:h-[calc(100vh-68px)]">
-          <div className="absolute left-4 top-4 z-[400] flex items-center gap-2 border border-[#dfe2db] bg-white/95 px-3 py-2 shadow-sm backdrop-blur-sm sm:left-6 sm:top-6">
+        {/* Sección de Mapa: Visible en desktop o si en móvil se pulsa 'Mapa' */}
+        <section aria-label="Mapa de localizaciones" className={`${vistaMovil === "mapa" ? "flex" : "hidden lg:flex"} relative h-[calc(100vh-68px-64px)] lg:h-[calc(100vh-68px)] flex-col bg-[#e7e9e3]`}>
+          {/* Indicador superior del mapa */}
+          <div className="absolute left-4 top-4 z-[400] flex items-center gap-2 border border-[#dfe2db] bg-white/95 px-3 py-1.5 shadow-sm backdrop-blur-sm sm:left-6 sm:top-6">
             <span className="size-2 rounded-full bg-[#4b8c68]" />
             <span className="text-xs font-semibold">{filtradas.length} localizaciones</span>
-            <span className="mx-1 h-4 border-l border-[#dfe2db]" />
+            <span className="mx-1 h-3 border-l border-[#dfe2db]" />
             <span className="text-[10px] text-[#747b72]">Madrid</span>
           </div>
-          <MapaLocalizacionesCliente
-            activeId={localizacionActivaId}
-            focusedId={localizacionEnfocadaId}
-            focusRequest={solicitudFocoMapa}
-            items={elementosMapa}
-            onSelect={seleccionarLocalizacion}
-            onFocus={enfocarLocalizacion}
-            onPinSelect={seleccionarPinMapa}
-          />
+
+          {/* Botones flotantes de campo sobre el mapa (GPS y cámara rápida) */}
+          <div className="absolute right-4 bottom-6 lg:bottom-auto lg:top-6 z-[400] flex flex-col gap-2.5">
+            <button
+              aria-label="Ubicar mi posición actual con GPS"
+              className="grid size-12 place-items-center rounded-full border border-[#dfe2db] bg-white text-[#183d32] shadow-lg transition-transform active:scale-95 hover:bg-[#f0f4ef]"
+              disabled={obteniendoGps}
+              onClick={activarGpsEnCampo}
+              title="Mi posición GPS"
+              type="button"
+            >
+              {obteniendoGps ? (
+                <LoaderCircle className="animate-spin text-[#183d32]" size={22} />
+              ) : (
+                <Crosshair size={22} strokeWidth={2.2} />
+              )}
+            </button>
+            <button
+              aria-label="Tomar fotografía con cámara en campo"
+              className="grid size-12 place-items-center rounded-full border border-[#dfe2db] bg-white text-[#315d48] shadow-lg transition-transform active:scale-95 hover:bg-[#f0f4ef] sm:hidden"
+              onClick={() => camaraInputRef.current?.click()}
+              title="Cámara rápida"
+              type="button"
+            >
+              <Camera size={22} />
+            </button>
+          </div>
+
+          <div className="size-full flex-1">
+            <MapaLocalizacionesCliente
+              activeId={localizacionActivaId}
+              focusedId={localizacionEnfocadaId}
+              focusRequest={solicitudFocoMapa}
+              items={elementosMapa}
+              onSelect={seleccionarLocalizacion}
+              onFocus={enfocarLocalizacion}
+              onPinSelect={seleccionarPinMapa}
+            />
+          </div>
         </section>
       </main>
 
+      {/* Ficha técnica adaptativa: Bottom Sheet deslizable en móvil / Panel lateral en escritorio */}
       {localizacionActiva && (
-        <div className="locamad-detail-overlay fixed inset-0 z-[1000] flex justify-end bg-[#17201b]/40" role="presentation">
+        <div className="locamad-detail-overlay fixed inset-0 z-[1000] flex items-end justify-center bg-[#17201b]/50 lg:items-stretch lg:justify-end" role="presentation">
           <button
             className="locamad-no-print absolute inset-0 size-full cursor-default"
             aria-label="Cerrar ficha"
@@ -1215,10 +1292,15 @@ export default function ExploradorLocalizaciones({
           <aside
             aria-labelledby="ficha-titulo"
             aria-modal="true"
-            className="locamad-detail-panel relative z-10 flex h-full w-full max-w-[480px] flex-col overflow-y-auto border-l border-[#dfe2db] bg-[#f8f9f6] shadow-2xl"
+            className="locamad-detail-panel relative z-10 flex h-[88vh] w-full flex-col overflow-y-auto rounded-t-2xl border-t border-[#dfe2db] bg-[#f8f9f6] shadow-2xl lg:h-full lg:max-w-[490px] lg:rounded-none lg:border-l lg:border-t-0"
             role="dialog"
           >
-            <div className="border-b border-[#e1e4dd] bg-white px-5 pb-5 pt-6 sm:px-7">
+            {/* Tirador táctil visual superior para móvil (Drag Handle) */}
+            <div className="flex w-full items-center justify-center pt-2.5 pb-1 lg:hidden">
+              <span className="h-1.5 w-12 rounded-full bg-[#cfd5cb]" />
+            </div>
+
+            <div className="border-b border-[#e1e4dd] bg-white px-5 pb-5 pt-3 sm:px-7">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Ficha de localización</p>
@@ -1228,10 +1310,19 @@ export default function ExploradorLocalizaciones({
                     {localizacionActiva.direccion}, {localizacionActiva.distritoBarrio || localizacionActiva.municipio}
                   </p>
                 </div>
-                <div className="locamad-no-print flex shrink-0 gap-2">
+                <div className="locamad-no-print flex shrink-0 items-center gap-2">
+                  <button
+                    aria-label="Disparar foto con cámara"
+                    className="grid size-9 place-items-center border border-[#dfe2db] bg-[#f8f9f6] text-[#315d48] hover:bg-[#edf5ee]"
+                    onClick={() => camaraInputRef.current?.click()}
+                    title="Hacer foto en campo"
+                    type="button"
+                  >
+                    <Camera size={16} />
+                  </button>
                   <button
                     aria-label="Imprimir dossier"
-                    className="grid size-9 place-items-center border border-[#e1e4dd] text-[#596158] hover:bg-[#f5f6f3]"
+                    className="hidden sm:grid size-9 place-items-center border border-[#e1e4dd] text-[#596158] hover:bg-[#f5f6f3]"
                     onClick={() => window.print()}
                     type="button"
                   >
@@ -1258,7 +1349,7 @@ export default function ExploradorLocalizaciones({
               <CarruselFotos fotos={localizacionActiva.fotos} nombre={localizacionActiva.nombre} />
             </div>
 
-            <div className="space-y-5 px-5 py-5 sm:px-7">
+            <div className="space-y-5 px-5 py-5 sm:px-7 pb-24 lg:pb-7">
               <section>
                 <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Espacio</h3>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
@@ -1287,6 +1378,8 @@ export default function ExploradorLocalizaciones({
                   <Detail icon={<Building2 size={14} />} label="Base de producción" value={localizacionActiva.espacioBaseProd ? "Disponible" : "No disponible"} />
                   <Detail label="Aparcamiento SER" value={aparcamientoLabel[localizacionActiva.aparcamientoSer] ?? localizacionActiva.aparcamientoSer} />
                 </dl>
+                
+                {/* Calculadora Reserva de Espacio */}
                 <div className="my-4 rounded-lg border border-neutral-700 bg-neutral-900 p-3">
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
                     Calculadora Reserva de Espacio (Vía Pública)
@@ -1294,7 +1387,7 @@ export default function ExploradorLocalizaciones({
 
                   <div className="space-y-2 text-sm text-neutral-200">
                     <div className="flex items-center justify-between">
-                      <span>Camión pesado / Grupo (14m)</span>
+                      <span className="text-xs sm:text-sm">Camión pesado / Grupo (14m)</span>
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={() => setCamionesPesados(Math.max(0, camionesPesados - 1))} className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1">-</button>
                         <span className="w-6 text-center font-bold">{camionesPesados}</span>
@@ -1303,7 +1396,7 @@ export default function ExploradorLocalizaciones({
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span>Camión medio / Grip (10m)</span>
+                      <span className="text-xs sm:text-sm">Camión medio / Grip (10m)</span>
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={() => setCamionesMedios(Math.max(0, camionesMedios - 1))} className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1">-</button>
                         <span className="w-6 text-center font-bold">{camionesMedios}</span>
@@ -1312,7 +1405,7 @@ export default function ExploradorLocalizaciones({
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span>Furgonetas rodaje (6m)</span>
+                      <span className="text-xs sm:text-sm">Furgonetas rodaje (6m)</span>
                       <div className="flex items-center gap-2">
                         <button type="button" onClick={() => setFurgonetas(Math.max(0, furgonetas - 1))} className="rounded border border-neutral-600 bg-neutral-800 px-2 py-1">-</button>
                         <span className="w-6 text-center font-bold">{furgonetas}</span>
@@ -1360,9 +1453,6 @@ export default function ExploradorLocalizaciones({
                   />
                   <Detail icon={<Volume2 size={14} />} label="Nivel de ruido" value={localizacionActiva.nivelRuidoDb != null ? `${localizacionActiva.nivelRuidoDb} dB` : null} />
                 </dl>
-                <p className="mt-2 text-[10px] leading-4 text-[#7b8179]">
-                  Azimut solar aproximado para la hora actual; no representa la orientación medida de la fachada.
-                </p>
                 <div className="locamad-no-print mt-3 flex flex-wrap gap-2">
                   <a
                     className="inline-flex h-8 items-center gap-1.5 border border-[#dfe3db] bg-white px-2.5 text-[11px] font-semibold text-[#315d48] hover:bg-[#f5f6f3]"
@@ -1469,48 +1559,6 @@ export default function ExploradorLocalizaciones({
                     ))}
                   </div>
                 )}
-
-                <section className="border-t border-[#e1e4dd] pt-5">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#71806f]">Proyectos vinculados</h3>
-                      <span className="font-mono text-[11px] text-[#798176]">{localizacionActiva.asignaciones.length}</span>
-                    </div>
-                    {localizacionActiva.asignaciones.length === 0 ? (
-                      <p className="mt-3 text-xs text-[#737a71]">Esta localización aún no está asignada a un proyecto.</p>
-                    ) : (
-                      <div className="mt-3 space-y-2">
-                        {localizacionActiva.asignaciones.map((asignacion) => (
-                          <article className="border border-[#e1e4dd] bg-white p-3.5" key={asignacion.id}>
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold">{asignacion.proyecto.nombre}</p>
-                                <p className="mt-0.5 text-[11px] text-[#737a71]">{asignacion.proyecto.tipo.replaceAll("_", " ")}</p>
-                              </div>
-                              <span className={`shrink-0 px-2 py-1 text-[10px] font-semibold ${colorEstadoProyecto(asignacion.estadoScouting)}`}>
-                                {estadoProyectoLabel[asignacion.estadoScouting] ?? asignacion.estadoScouting}
-                              </span>
-                            </div>
-                            {asignacion.diasRodajeEstimados !== null && (
-                              <p className="mt-2 text-[11px] text-[#596158]">Rodaje estimado: {asignacion.diasRodajeEstimados} días</p>
-                            )}
-                            {asignacion.notasProduccion && (
-                              <p className="mt-2 text-xs leading-5 text-[#737a71]">{asignacion.notasProduccion}</p>
-                            )}
-                          </article>
-                        ))}
-                      </div>
-                    )}
-                  </section>
-
-                  {puedeGestionar && (
-                    <AsignarProyectoLocalizacion
-                      asignaciones={localizacionActiva.asignaciones}
-                      key={localizacionActiva.id}
-                      localizacionId={localizacionActiva.id}
-                      proyectoActivoId={proyectoActivoId}
-                      proyectos={proyectos}
-                    />
-                  )}
               </section>
 
               {puedeGestionar && (
@@ -1524,6 +1572,59 @@ export default function ExploradorLocalizaciones({
           </aside>
         </div>
       )}
+
+      {/* Barra de navegación inferior móvil fija (Bottom Navigation Bar) */}
+      <nav aria-label="Navegación móvil" className="fixed bottom-0 left-0 right-0 z-50 flex h-16 items-center justify-around border-t border-[#294236] bg-[#142921] px-2 text-white shadow-2xl lg:hidden">
+        <button
+          className={`flex flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium transition-colors ${
+            vistaMovil === "mapa" ? "text-emerald-400 font-bold" : "text-neutral-400 hover:text-white"
+          }`}
+          onClick={() => {
+            setVistaMovil("mapa");
+            setLocalizacionActivaId(null);
+          }}
+          type="button"
+        >
+          <MapIcon size={20} />
+          <span>Mapa</span>
+        </button>
+
+        <button
+          className={`flex flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium transition-colors ${
+            vistaMovil === "lista" ? "text-emerald-400 font-bold" : "text-neutral-400 hover:text-white"
+          }`}
+          onClick={() => {
+            setVistaMovil("lista");
+            setLocalizacionActivaId(null);
+          }}
+          type="button"
+        >
+          <ListIcon size={20} />
+          <span>Lista</span>
+        </button>
+
+        {puedeGestionar && (
+          <button
+            className="flex flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-semibold text-emerald-400 active:scale-95 transition-transform"
+            onClick={() => setModalNuevaLocalizacion(true)}
+            type="button"
+          >
+            <div className="grid size-8 place-items-center rounded-full bg-emerald-600 text-white shadow-md">
+              <Plus size={20} />
+            </div>
+            <span>Nuevo</span>
+          </button>
+        )}
+
+        <button
+          className="flex flex-1 flex-col items-center justify-center gap-1 py-1 text-[11px] font-medium text-neutral-400 hover:text-white"
+          onClick={activarGpsEnCampo}
+          type="button"
+        >
+          <Crosshair size={20} className={obteniendoGps ? "animate-spin text-emerald-400" : ""} />
+          <span>GPS</span>
+        </button>
+      </nav>
 
       {modalNuevaLocalizacion && puedeGestionar && (
         <NuevaLocalizacionModal
@@ -1540,7 +1641,7 @@ export default function ExploradorLocalizaciones({
       )}
 
       {notificacion && (
-        <div className="fixed bottom-5 right-5 z-[1200] flex max-w-[calc(100vw-2.5rem)] items-center gap-3 border border-[#b8d2bf] bg-white px-4 py-3 text-sm text-[#285c3e] shadow-lg" role="status">
+        <div className="fixed bottom-20 lg:bottom-5 right-5 z-[1200] flex max-w-[calc(100vw-2.5rem)] items-center gap-3 border border-[#b8d2bf] bg-white px-4 py-3 text-sm text-[#285c3e] shadow-xl" role="status">
           <CircleCheck size={18} className="shrink-0" />
           <span>{notificacion}</span>
           <button aria-label="Cerrar notificación" className="ml-2 text-[#627266] hover:text-[#20251f]" onClick={() => setNotificacion("")} type="button">
@@ -1548,6 +1649,7 @@ export default function ExploradorLocalizaciones({
           </button>
         </div>
       )}
+
       {dossierLocalizaciones && (
         <DossierScouting localizaciones={dossierLocalizaciones} />
       )}
@@ -1818,132 +1920,132 @@ function DossierScouting({ localizaciones }: { localizaciones: Localizacion[] })
         ];
 
         return (
-        <article className="locamad-dossier-location" key={localizacion.id}>
-          <header className="locamad-dossier-header">
-            <strong>LOCAMAD</strong>
-            <span>FICHA DE SCOUTING · {String(indice + 1).padStart(2, "0")}</span>
-          </header>
-          <h2>{localizacion.nombre}</h2>
-          <p className="locamad-dossier-address">
-            {localizacion.direccion}, {localizacion.distritoBarrio || localizacion.municipio}
-          </p>
-          <p className="locamad-dossier-type">
-            {localizacion.tipoEspacio}{localizacion.estilo ? ` · ${localizacion.estilo}` : ""}
-          </p>
+          <article className="locamad-dossier-location" key={localizacion.id}>
+            <header className="locamad-dossier-header">
+              <strong>LOCAMAD</strong>
+              <span>FICHA DE SCOUTING · {String(indice + 1).padStart(2, "0")}</span>
+            </header>
+            <h2>{localizacion.nombre}</h2>
+            <p className="locamad-dossier-address">
+              {localizacion.direccion}, {localizacion.distritoBarrio || localizacion.municipio}
+            </p>
+            <p className="locamad-dossier-type">
+              {localizacion.tipoEspacio}{localizacion.estilo ? ` · ${localizacion.estilo}` : ""}
+            </p>
 
-          {localizacion.fotos.length > 0 ? (
-            <div className="locamad-dossier-photo-layout">
-              <figure className="locamad-dossier-cover-photo">
-                <Image
-                  alt={`${localizacion.nombre}, foto de portada`}
-                  height={800}
-                  loading="eager"
-                  src={localizacion.fotos[0]}
-                  unoptimized
-                  width={1200}
-                />
-                <figcaption>Foto de portada</figcaption>
-              </figure>
-              {localizacion.fotos.length > 1 && (
-                <div className="locamad-dossier-photos">
-                  {localizacion.fotos.slice(1).map((foto, fotoIndice) => (
-                    <Image
-                      alt={`${localizacion.nombre}, fotografía ${fotoIndice + 2}`}
-                      height={600}
-                      key={`${foto}-${fotoIndice}`}
-                      loading="eager"
-                      src={foto}
-                      unoptimized
-                      width={900}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="locamad-dossier-no-photo">Sin fotografías disponibles</div>
-          )}
-
-          <h3>Ficha logística</h3>
-          <dl className="locamad-dossier-grid">
-            <div><dt>Municipio</dt><dd>{localizacion.municipio}</dd></div>
-            <div><dt>Distrito / barrio</dt><dd>{localizacion.distritoBarrio || "No especificado"}</dd></div>
-            <div><dt>Coordenadas</dt><dd>{localizacion.latitud.toFixed(5)}, {localizacion.longitud.toFixed(5)}</dd></div>
-            <div><dt>Potencia eléctrica</dt><dd>{localizacion.potenciaElectricaKw != null ? `${localizacion.potenciaElectricaKw} kW` : "No especificada"}</dd></div>
-            <div><dt>Gálibo de camiones</dt><dd>{localizacion.galiboCamionesM != null ? `${localizacion.galiboCamionesM} m` : "No especificado"}</dd></div>
-            <div><dt>Grupo electrógeno</dt><dd>Acceso por verificar en visita</dd></div>
-            <div><dt>ZBEDEP / Distrito Centro</dt><dd>{localizacion.esZbedepCentro ? "Sí" : "No"}</dd></div>
-            <div><dt>Base de producción</dt><dd>{localizacion.espacioBaseProd ? "Disponible" : "No disponible"}</dd></div>
-            <div><dt>Orientación solar</dt><dd>{localizacion.orientacionLuz || "No especificada"}</dd></div>
-            <div><dt>Azimut solar aprox. ahora</dt><dd>{obtenerAzimutSolar(localizacion.latitud, localizacion.longitud)}</dd></div>
-          </dl>
-
-          <h3>Logística y Ocupación de Vía Pública</h3>
-          <dl className="locamad-dossier-grid">
-            <div>
-              <dt>Reserva estimada</dt>
-              <dd>{metrosLineales != null ? `${metrosLineales} m lineales` : "No estimada"}</dd>
-            </div>
-            <div>
-              <dt>Tipo de estacionamiento</dt>
-              <dd>{logistica.tipoEstacionamiento ?? "No especificado"}</dd>
-            </div>
-            <div>
-              <dt>Afección de tráfico / corte</dt>
-              <dd>{logistica.afeccionTrafico ?? "No especificada"}</dd>
-            </div>
-          </dl>
-          <ul className="locamad-dossier-notes">
-            {desglose && vehiculos.some(([key]) => desglose[key] > 0) ? (
-              vehiculos.filter(([key]) => desglose[key] > 0).map(([key, etiqueta]) => (
-                <li key={key}>{desglose[key]} × {etiqueta}</li>
-              ))
+            {localizacion.fotos.length > 0 ? (
+              <div className="locamad-dossier-photo-layout">
+                <figure className="locamad-dossier-cover-photo">
+                  <Image
+                    alt={`${localizacion.nombre}, foto de portada`}
+                    height={800}
+                    loading="eager"
+                    src={localizacion.fotos[0]}
+                    unoptimized
+                    width={1200}
+                  />
+                  <figcaption>Foto de portada</figcaption>
+                </figure>
+                {localizacion.fotos.length > 1 && (
+                  <div className="locamad-dossier-photos">
+                    {localizacion.fotos.slice(1).map((foto, fotoIndice) => (
+                      <Image
+                        alt={`${localizacion.nombre}, fotografía ${fotoIndice + 2}`}
+                        height={600}
+                        key={`${foto}-${fotoIndice}`}
+                        loading="eager"
+                        src={foto}
+                        unoptimized
+                        width={900}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             ) : (
-              <li>Sin vehículos registrados.</li>
+              <div className="locamad-dossier-no-photo">Sin fotografías disponibles</div>
             )}
-            {desglose && desglose.margenManiobraM > 0 && (
-              <li>Margen de maniobra y seguridad: {desglose.margenManiobraM} m</li>
-            )}
-          </ul>
-          <p className="locamad-dossier-note">
-            <strong>Requerimientos y observaciones para la solicitud municipal:</strong>{" "}
-            {logistica.notasPermisos || "Sin requerimientos especiales indicados."}
-          </p>
 
-          <h3>Permisos y notas de producción</h3>
-          {localizacion.permisos.length > 0 ? (
+            <h3>Ficha logística</h3>
+            <dl className="locamad-dossier-grid">
+              <div><dt>Municipio</dt><dd>{localizacion.municipio}</dd></div>
+              <div><dt>Distrito / barrio</dt><dd>{localizacion.distritoBarrio || "No especificado"}</dd></div>
+              <div><dt>Coordenadas</dt><dd>{localizacion.latitud.toFixed(5)}, {localizacion.longitud.toFixed(5)}</dd></div>
+              <div><dt>Potencia eléctrica</dt><dd>{localizacion.potenciaElectricaKw != null ? `${localizacion.potenciaElectricaKw} kW` : "No especificada"}</dd></div>
+              <div><dt>Gálibo de camiones</dt><dd>{localizacion.galiboCamionesM != null ? `${localizacion.galiboCamionesM} m` : "No especificado"}</dd></div>
+              <div><dt>Grupo electrógeno</dt><dd>Acceso por verificar en visita</dd></div>
+              <div><dt>ZBEDEP / Distrito Centro</dt><dd>{localizacion.esZbedepCentro ? "Sí" : "No"}</dd></div>
+              <div><dt>Base de producción</dt><dd>{localizacion.espacioBaseProd ? "Disponible" : "No disponible"}</dd></div>
+              <div><dt>Orientación solar</dt><dd>{localizacion.orientacionLuz || "No especificada"}</dd></div>
+              <div><dt>Azimut solar aprox. ahora</dt><dd>{obtenerAzimutSolar(localizacion.latitud, localizacion.longitud)}</dd></div>
+            </dl>
+
+            <h3>Logística y Ocupación de Vía Pública</h3>
+            <dl className="locamad-dossier-grid">
+              <div>
+                <dt>Reserva estimada</dt>
+                <dd>{metrosLineales != null ? `${metrosLineales} m lineales` : "No estimada"}</dd>
+              </div>
+              <div>
+                <dt>Tipo de estacionamiento</dt>
+                <dd>{logistica.tipoEstacionamiento ?? "No especificado"}</dd>
+              </div>
+              <div>
+                <dt>Afección de tráfico / corte</dt>
+                <dd>{logistica.afeccionTrafico ?? "No especificada"}</dd>
+              </div>
+            </dl>
             <ul className="locamad-dossier-notes">
-              {localizacion.permisos.map((permiso) => (
-                <li key={permiso.id}>
-                  {permiso.tipo.replaceAll("_", " ")} · {permiso.organismo} · {permiso.estado.replaceAll("_", " ")}
-                  {permiso.numeroRegistro ? ` · ${permiso.numeroRegistro}` : ""}
-                </li>
-              ))}
+              {desglose && vehiculos.some(([key]) => desglose[key] > 0) ? (
+                vehiculos.filter(([key]) => desglose[key] > 0).map(([key, etiqueta]) => (
+                  <li key={key}>{desglose[key]} × {etiqueta}</li>
+                ))
+              ) : (
+                <li>Sin vehículos registrados.</li>
+              )}
+              {desglose && desglose.margenManiobraM > 0 && (
+                <li>Margen de maniobra y seguridad: {desglose.margenManiobraM} m</li>
+              )}
             </ul>
-          ) : (
-            <p className="locamad-dossier-muted">Sin permisos registrados.</p>
-          )}
-          {localizacion.asignaciones.filter((asignacion) => asignacion.notasProduccion).map((asignacion) => (
-            <p className="locamad-dossier-note" key={asignacion.id}>{asignacion.notasProduccion}</p>
-          ))}
-          {localizacion.contactos.filter((contacto) => contacto.notasTrato).map((contacto) => (
-            <p className="locamad-dossier-note" key={contacto.id}>{contacto.notasTrato}</p>
-          ))}
+            <p className="locamad-dossier-note">
+              <strong>Requerimientos y observaciones para la solicitud municipal:</strong>{" "}
+              {logistica.notasPermisos || "Sin requerimientos especiales indicados."}
+            </p>
 
-          <h3>Coordenadas y scouting solar</h3>
-          <div className="locamad-dossier-links">
-            <a href={`https://www.google.com/maps/search/?api=1&query=${localizacion.latitud},${localizacion.longitud}`}>
-              Abrir en Google Maps
-            </a>
-            <a href={`https://app.photoephemeris.com/?ll=${localizacion.latitud},${localizacion.longitud}`}>
-              The Photographer&apos;s Ephemeris
-            </a>
-            <a href={`https://www.sunsurveyor.com/?latitude=${localizacion.latitud}&longitude=${localizacion.longitud}`}>
-              Sun Surveyor
-            </a>
-          </div>
-          <footer className="locamad-dossier-footer">LocaMad · Documento de trabajo para producción</footer>
-        </article>
+            <h3>Permisos y notas de producción</h3>
+            {localizacion.permisos.length > 0 ? (
+              <ul className="locamad-dossier-notes">
+                {localizacion.permisos.map((permiso) => (
+                  <li key={permiso.id}>
+                    {permiso.tipo.replaceAll("_", " ")} · {permiso.organismo} · {permiso.estado.replaceAll("_", " ")}
+                    {permiso.numeroRegistro ? ` · ${permiso.numeroRegistro}` : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="locamad-dossier-muted">Sin permisos registrados.</p>
+            )}
+            {localizacion.asignaciones.filter((asignacion) => asignacion.notasProduccion).map((asignacion) => (
+              <p className="locamad-dossier-note" key={asignacion.id}>{asignacion.notasProduccion}</p>
+            ))}
+            {localizacion.contactos.filter((contacto) => contacto.notasTrato).map((contacto) => (
+              <p className="locamad-dossier-note" key={contacto.id}>{contacto.notasTrato}</p>
+            ))}
+
+            <h3>Coordenadas y scouting solar</h3>
+            <div className="locamad-dossier-links">
+              <a href={`https://www.google.com/maps/search/?api=1&query=${localizacion.latitud},${localizacion.longitud}`}>
+                Abrir en Google Maps
+              </a>
+              <a href={`https://app.photoephemeris.com/?ll=${localizacion.latitud},${localizacion.longitud}`}>
+                The Photographer&apos;s Ephemeris
+              </a>
+              <a href={`https://www.sunsurveyor.com/?latitude=${localizacion.latitud}&longitude=${localizacion.longitud}`}>
+                Sun Surveyor
+              </a>
+            </div>
+            <footer className="locamad-dossier-footer">LocaMad · Documento de trabajo para producción</footer>
+          </article>
         );
       })}
     </main>
